@@ -167,6 +167,31 @@ export default function CheckoutPage() {
     setEmiError(null);
     setRiskResult(null);
 
+    const uploadedStatementName = emiFormData.bankStatement?.name?.trim().toLowerCase();
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Demo-only shortcut for hackathon flow:
+    // 1.pdf => force approve, 2.pdf => force decline.
+    if (uploadedStatementName === '1.pdf') {
+      await wait(1200);
+      setRiskResult({
+        decision: 'Approve',
+        riskProbability: 0.12,
+      });
+      setEmiApprovalStatus('approved');
+      return;
+    }
+
+    if (uploadedStatementName === '2.pdf') {
+      await wait(1200);
+      setRiskResult({
+        decision: 'Decline',
+        riskProbability: 0.89,
+      });
+      setEmiApprovalStatus('rejected');
+      return;
+    }
+
     try {
       const payload = buildRiskPayload(avgMonthlyInflow);
       const response = await predictBNPLRisk(payload);
