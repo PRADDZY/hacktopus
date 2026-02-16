@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from database.db import PredictionLog as PredictionLogDB
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 import uuid
 
@@ -26,7 +26,7 @@ def get_logs_by_buyer(db: Session, buyer_id: str) -> List[PredictionLogDB]:
 
 def get_statistics(db: Session, days: int = 7) -> dict:
     """Get aggregate statistics"""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     logs = db.query(PredictionLogDB).filter(
         PredictionLogDB.timestamp >= cutoff
     ).all()
@@ -53,4 +53,4 @@ def get_statistics(db: Session, days: int = 7) -> dict:
 
 def generate_prediction_id() -> str:
     """Generate unique prediction ID"""
-    return f"PRED_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6].upper()}"
+    return f"PRED_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6].upper()}"

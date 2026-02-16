@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+from datetime import datetime, timezone
 from config import settings
 
 engine = create_engine(
@@ -18,7 +18,7 @@ class PredictionLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     prediction_id = Column(String, unique=True, index=True)
     buyer_id = Column(String, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     
     monthly_income = Column(Float)
     purchase_amount = Column(Float)
