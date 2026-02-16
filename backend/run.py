@@ -22,10 +22,6 @@ from models.schemas import (
 from models.ml_connector import ml_connector
 from middleware.validators import validate_input, calculate_metrics, classify_income_group
 
-# ============================================================================
-# INITIALIZE FASTAPI APP
-# ============================================================================
-
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -33,10 +29,6 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
-
-# ============================================================================
-# CORS MIDDLEWARE - ALLOW FRONTEND TO CONNECT
-# ============================================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,47 +38,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============================================================================
-# HELPER FUNCTIONS (BUSINESS LOGIC)
-# ============================================================================
-
 def make_decision(risk_score: float, risk_category: str, metrics: dict) -> tuple:
-    """
-    Convert ML risk score to business decision
-    Returns: (decision, requires_confirmation, warning_message)
-    """
     dti_ratio = metrics["dti_ratio"]
     disposable_income = metrics["disposable_income"]
     
-    # REJECT conditions
     if risk_score > 0.7 or dti_ratio > 0.50 or disposable_income < 0:
         return Decision.REJECT, False, "❌ High financial risk. Cannot approve."
     
-    # HIGH RISK
     elif risk_category == "High":
         return Decision.APPROVE_WITH_WARNING, True, "⚠️ HIGH RISK: Proceed with extreme caution."
     
-    # MODERATE RISK
     elif risk_category == "Moderate":
         if dti_ratio > 0.43:
             return Decision.CONDITIONAL_APPROVE, True, "⚠️ High debt burden. Consider reducing EMI."
         else:
             return Decision.APPROVE_WITH_WARNING, False, "✓ Approved. Monitor budget carefully."
     
-    # LOW RISK
     else:
         return Decision.APPROVE, False, None
 
-def calculate_financial_health(credit_score: int, dti_ratio: float, savings_months: float) -> float:
-    """Calculate financial health score (0-100)"""
-    credit_component = ((credit_score - 300) / 600) * 40
-    dti_component = max(0, (1 - dti_ratio) * 40)
-    savings_component = min(savings_months / 6, 1) * 20
+def calculate_financial_health(dti_ratio: float, savings_months: float) -> float:
+    dti_component = max(0, (1 - dti_ratio) * 60)
+    savings_component = min(savings_months / 6, 1) * 40
     
-    return round(max(0, min(100, credit_component + dti_component + savings_component)), 2)
+    health_score = dti_component + savings_component
+    return round(max(0, min(100, health_score)), 2)
 
 def calculate_debt_trap_probability(dti: float, foir: float, savings_months: float, risk_score: float) -> float:
-    """Calculate debt trap probability"""
     trap_score = (
         min(dti, 1.0) * 0.4 +
         min(foir, 1.0) * 0.3 +
@@ -96,7 +74,6 @@ def calculate_debt_trap_probability(dti: float, foir: float, savings_months: flo
     return round(min(trap_score, 1.0) * 100, 2)
 
 def generate_recommendation(decision: Decision, metrics: dict) -> str:
-    """Generate user-friendly recommendation"""
     if decision == Decision.REJECT:
         return "🚨 We strongly advise against this purchase. Your financial obligations would exceed safe limits."
     elif decision == Decision.APPROVE_WITH_WARNING:
@@ -106,13 +83,8 @@ def generate_recommendation(decision: Decision, metrics: dict) -> str:
     else:
         return f"✅ You can comfortably afford this EMI. Monthly payment: ₹{metrics['proposed_monthly_emi']:.0f}"
 
-# ============================================================================
-# API ENDPOINTS
-# ============================================================================
-
 @app.get("/", response_model=HealthResponse)
 async def root():
-    """Root endpoint - Health check"""
     ml_status = "connected" if await ml_connector.health_check() else "disconnected"
     
     return HealthResponse(
@@ -125,7 +97,6 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Detailed health check"""
     ml_status = "connected" if await ml_connector.health_check() else "disconnected"
     
     return HealthResponse(
@@ -135,10 +106,6 @@ async def health_check():
         database_status="connected",
         timestamp=datetime.utcnow()
     )
-
-# ============================================================================
-# MAIN PREDICTION ENDPOINT (FRONTEND → BACKEND → ML)
-# ============================================================================
 
 @app.post(
     f"{settings.API_V1_STR}/predict",
@@ -150,18 +117,7 @@ async def predict_risk(
     input_data: BuyerFinancialInput,
     db: Session = Depends(get_db)
 ):
-    """
-    MAIN WORKFLOW:
-    1. Frontend sends buyer financial data
-    2. Backend validates input
-    3. Backend calculates financial metrics
-    4. Backend calls ML service for risk prediction
-    5. Backend applies business logic (decision rules)
-    6. Backend stores prediction in database
-    7. Backend returns complete response to frontend
-    """
     try:
-        # STEP 1: Validate input from frontend
         is_valid, errors = validate_input(input_data)
         if not is_valid:
             raise HTTPException(
@@ -169,12 +125,9 @@ async def predict_risk(
                 detail={"message": "Validation failed", "errors": errors}
             )
         
-        # STEP 2: Calculate financial metrics
         metrics = calculate_metrics(input_data)
         
-        # STEP 3: Prepare request for ML service
         ml_request = MLModelRequest(
-            credit_score=input_data.credit_score,
             monthly_income=input_data.monthly_income,
             dti_ratio=metrics["dti_ratio"],
             foir=metrics["foir"],
@@ -184,7 +137,6 @@ async def predict_risk(
             existing_emi=input_data.existing_emi_amount
         )
         
-        # STEP 4: Call ML service (YOUR TEAMMATE'S CODE)
         try:
             ml_response = await ml_connector.predict(ml_request)
         except Exception as e:
@@ -193,16 +145,13 @@ async def predict_risk(
                 detail=f"ML service unavailable: {str(e)}"
             )
         
-        # STEP 5: Apply business logic to ML prediction
         decision, requires_confirmation, warning_msg = make_decision(
             ml_response.risk_score,
             ml_response.risk_category,
             metrics
         )
         
-        # STEP 6: Calculate additional metrics
         financial_health = calculate_financial_health(
-            input_data.credit_score,
             metrics["dti_ratio"],
             metrics["savings_months"]
         )
@@ -216,15 +165,12 @@ async def predict_risk(
         
         recommendation = generate_recommendation(decision, metrics)
         
-        # STEP 7: Generate prediction ID
         prediction_id = crud.generate_prediction_id()
         
-        # STEP 8: Store in database for monitoring
         log_data = {
             "prediction_id": prediction_id,
             "buyer_id": input_data.buyer_id,
             "timestamp": datetime.utcnow(),
-            "credit_score": input_data.credit_score,
             "monthly_income": input_data.monthly_income,
             "purchase_amount": input_data.purchase_amount,
             "emi_tenure_months": input_data.emi_tenure_months,
@@ -241,7 +187,6 @@ async def predict_risk(
         }
         crud.create_prediction_log(db, log_data)
         
-        # STEP 9: Return complete response to frontend
         return RiskPredictionResponse(
             risk_score=ml_response.risk_score,
             risk_category=RiskCategory(ml_response.risk_category),
@@ -268,10 +213,6 @@ async def predict_risk(
             detail=f"Internal server error: {str(e)}"
         )
 
-# ============================================================================
-# LENDER DASHBOARD ENDPOINTS
-# ============================================================================
-
 @app.get(
     f"{settings.API_V1_STR}/lender/applications",
     response_model=List[LenderDashboardData],
@@ -282,9 +223,6 @@ async def get_lender_applications(
     limit: int = 50,
     db: Session = Depends(get_db)
 ):
-    """
-    Get recent applications for lender review
-    """
     try:
         logs = crud.get_recent_logs(db, limit=limit)
         
@@ -293,7 +231,6 @@ async def get_lender_applications(
             data = LenderDashboardData(
                 buyer_id=log.buyer_id,
                 prediction_id=log.prediction_id,
-                credit_score=log.credit_score,
                 monthly_income=log.monthly_income,
                 dti_ratio=log.dti_ratio,
                 foir=log.foir,
@@ -324,9 +261,6 @@ async def get_statistics_endpoint(
     days: int = 7,
     db: Session = Depends(get_db)
 ):
-    """
-    Get aggregate statistics
-    """
     try:
         stats = crud.get_statistics(db, days=days)
         return stats
@@ -343,11 +277,7 @@ async def get_statistics_endpoint(
     description="Calculate fairness metrics across demographic groups"
 )
 async def get_fairness_metrics(db: Session = Depends(get_db)):
-    """
-    Calculate and return fairness metrics
-    """
     try:
-        # Get all logs
         logs = crud.get_recent_logs(db, limit=1000)
         
         if len(logs) == 0:
@@ -361,7 +291,6 @@ async def get_fairness_metrics(db: Session = Depends(get_db)):
                 timestamp=datetime.utcnow()
             )
         
-        # Calculate metrics by income group
         groups = {}
         for log in logs:
             group = log.income_group
@@ -374,7 +303,6 @@ async def get_fairness_metrics(db: Session = Depends(get_db)):
             elif log.decision == "Reject":
                 groups[group]["rejected"] += 1
         
-        # Calculate rates
         metrics_by_group = {}
         approval_rates = []
         
@@ -389,12 +317,10 @@ async def get_fairness_metrics(db: Session = Depends(get_db)):
             }
             approval_rates.append(approval_rate)
         
-        # Overall stats
         total = len(logs)
         total_approved = sum(1 for log in logs if "Approve" in log.decision)
         total_rejected = sum(1 for log in logs if log.decision == "Reject")
         
-        # Fairness score
         approval_gap = max(approval_rates) - min(approval_rates) if approval_rates else 0
         fairness_score = 100 - (approval_gap * 100)
         
@@ -425,13 +351,7 @@ async def get_fairness_metrics(db: Session = Depends(get_db)):
     description="Check for model drift"
 )
 async def check_model_drift(db: Session = Depends(get_db)):
-    """
-    Check for data/model drift
-    """
     try:
-        # Simple drift check implementation
-        # You can expand this based on your needs
-        
         return DriftReport(
             drift_detected=False,
             drift_severity="None",
@@ -446,15 +366,11 @@ async def check_model_drift(db: Session = Depends(get_db)):
             detail=f"Error checking drift: {str(e)}"
         )
 
-# ============================================================================
-# RUN APPLICATION
-# ============================================================================
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True  # Auto-reload on code changes
+        reload=True
     )
