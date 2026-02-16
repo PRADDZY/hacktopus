@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from config import settings
@@ -92,7 +92,7 @@ async def root():
         version=settings.VERSION,
         ml_service_status=ml_status,
         database_status="connected",
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
 
 @app.get("/health", response_model=HealthResponse)
@@ -104,7 +104,7 @@ async def health_check():
         version=settings.VERSION,
         ml_service_status=ml_status,
         database_status="connected",
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
 
 @app.post(
@@ -170,7 +170,7 @@ async def predict_risk(
         log_data = {
             "prediction_id": prediction_id,
             "buyer_id": input_data.buyer_id,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "monthly_income": input_data.monthly_income,
             "purchase_amount": input_data.purchase_amount,
             "emi_tenure_months": input_data.emi_tenure_months,
@@ -202,7 +202,7 @@ async def predict_risk(
             disposable_income=metrics["disposable_income"],
             key_factors=ml_response.feature_importance,
             prediction_id=prediction_id,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     except HTTPException:
@@ -288,7 +288,7 @@ async def get_fairness_metrics(db: Session = Depends(get_db)):
                 metrics_by_group={},
                 fairness_score=100.0,
                 issues_detected=[],
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         
         groups = {}
@@ -335,7 +335,7 @@ async def get_fairness_metrics(db: Session = Depends(get_db)):
             metrics_by_group=metrics_by_group,
             fairness_score=round(fairness_score, 2),
             issues_detected=issues,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     except Exception as e:
@@ -357,7 +357,7 @@ async def check_model_drift(db: Session = Depends(get_db)):
             drift_severity="None",
             psi_score=0.08,
             recommendations=["No significant drift detected"],
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
     
     except Exception as e:
@@ -369,7 +369,7 @@ async def check_model_drift(db: Session = Depends(get_db)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        "run:app",
         host="0.0.0.0",
         port=8000,
         reload=True
