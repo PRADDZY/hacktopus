@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --grid-dots-size: 2px;
+  --grid-dots-spacing: 40px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: #F7FFF7;
+  overflow-x: hidden;
+  background-image: radial-gradient(circle, #000 var(--grid-dots-size), transparent var(--grid-dots-size));
+  background-size: var(--grid-dots-spacing) var(--grid-dots-spacing);
+  background-position: 0 0;
+}
+
+/* Custom border widths */
+.border-3 {
+  border-width: 3px;
+}
+
+.border-b-3 {
+  border-bottom-width: 3px;
+}
+
+.border-t-3 {
+  border-top-width: 3px;
+}
+
+.border-l-3 {
+  border-left-width: 3px;
+}
+
+.border-r-3 {
+  border-right-width: 3px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-left: 3px solid #000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #FF6B6B;
+  border: 2px solid #000;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4ECDC4;
+}
+
+/* Input focus styles */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  box-shadow: 8px 8px 0px 0px #000;
+}
+
+/* Animations */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-brutal {
+  0%, 100% {
+    box-shadow: 8px 8px 0px 0px #000;
+  }
+  50% {
+    box-shadow: 12px 12px 0px 0px #000;
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-slide-in {
+  animation: slide-in 0.5s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out;
+}
+
+.animate-pulse-brutal {
+  animation: pulse-brutal 2s ease-in-out infinite;
+}
+
+/* Loading skeleton */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s ease-in-out infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
