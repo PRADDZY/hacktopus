@@ -7,7 +7,8 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 
 const toPercent = (value: number): number => Math.round(clamp(value, 0, 1) * 100);
 
-const toStatus = (decision: 'Approve' | 'Decline') => (decision === 'Approve' ? 'Approved' : 'Rejected') as const;
+const toStatus = (decision: 'Approve' | 'Decline'): EMIRequest['status'] =>
+  decision === 'Approve' ? 'Approved' : 'Rejected';
 
 export const mapLogToEMIRequest = (item: BackendLogItem): EMIRequest => {
   const riskScore = toPercent(item.risk_probability);
