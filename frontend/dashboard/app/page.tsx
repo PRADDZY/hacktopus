@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import KPICard from '@/components/dashboard/KPICard';
-import EMIRequestsTable from '@/components/dashboard/EMIRequestsTable';
-import BuyerDetailsDrawer from '@/components/dashboard/BuyerDetailsDrawer';
-import { fetchLogs, fetchStats, mapLogToEMIRequest } from '@/utils/fairlensApi';
-import { BackendStats, EMIRequest } from '@/types';
+import KPICard from '../components/dashboard/KPICard';
+import EMIRequestsTable from '../components/dashboard/EMIRequestsTable';
+import BuyerDetailsDrawer from '../components/dashboard/BuyerDetailsDrawer';
+import { fetchLogs, fetchStats, mapLogToEMIRequest } from '../utils/fairlensApi';
+import { BackendStats, EMIRequest } from '../types';
 
 const PAGE_SIZE = 10;
 

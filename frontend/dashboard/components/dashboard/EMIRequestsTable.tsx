@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { EMIRequest } from '@/types';
+import { EMIRequest } from '../../types';
 
 interface EMIRequestsTableProps {
   requests: EMIRequest[];

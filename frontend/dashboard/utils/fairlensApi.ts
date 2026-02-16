@@ -1,4 +1,4 @@
-import { BackendLogItem, BackendLogsResponse, BackendStats, EMIRequest } from '@/types';
+import { BackendLogItem, BackendLogsResponse, BackendStats, EMIRequest } from '../types';
 
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') ?? 'http://localhost:10000';

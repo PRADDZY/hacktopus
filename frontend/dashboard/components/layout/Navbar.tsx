@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { DashboardAlert } from '@/types';
+import { DashboardAlert } from '../../types';
 
 const defaultAlerts: DashboardAlert[] = [
   {

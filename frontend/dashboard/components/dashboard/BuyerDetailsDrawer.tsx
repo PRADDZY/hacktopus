@@ -1,6 +1,6 @@
 'use client';
 
-import { EMIRequest } from '@/types';
+import { EMIRequest } from '../../types';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface BuyerDetailsDrawerProps {

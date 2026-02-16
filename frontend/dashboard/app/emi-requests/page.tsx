@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import EMIRequestsTable from '@/components/dashboard/EMIRequestsTable';
-import BuyerDetailsDrawer from '@/components/dashboard/BuyerDetailsDrawer';
-import { fetchLogs, fetchStats, mapLogToEMIRequest } from '@/utils/fairlensApi';
-import { BackendStats, EMIRequest } from '@/types';
+import EMIRequestsTable from '../../components/dashboard/EMIRequestsTable';
+import BuyerDetailsDrawer from '../../components/dashboard/BuyerDetailsDrawer';
+import { fetchLogs, fetchStats, mapLogToEMIRequest } from '../../utils/fairlensApi';
+import { BackendStats, EMIRequest } from '../../types';
 
 const PAGE_SIZE = 10;
 

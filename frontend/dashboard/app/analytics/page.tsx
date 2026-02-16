@@ -13,8 +13,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { BackendLogItem, BackendStats } from '@/types';
-import { fetchLogs, fetchStats } from '@/utils/fairlensApi';
+import { BackendLogItem, BackendStats } from '../../types';
+import { fetchLogs, fetchStats } from '../../utils/fairlensApi';
 
 type MonthlyRiskPoint = {
   month: string;
