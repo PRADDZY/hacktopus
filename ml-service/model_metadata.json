@@ -1,0 +1,1 @@
+{"threshold": 0.55, "feature_columns": ["avg_monthly_inflow", "inflow_volatility", "avg_monthly_outflow", "min_balance_30d", "neg_balance_days_30d", "purchase_to_inflow_ratio", "total_burden_ratio", "buffer_ratio", "stress_index"]}
