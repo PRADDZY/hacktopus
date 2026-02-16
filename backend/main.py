@@ -6,6 +6,7 @@ from typing import Any
 
 import joblib
 import pandas as pd
+import xgboost as xgb
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -27,6 +28,7 @@ DEFAULT_FEATURE_COLUMNS = [
     "buffer_ratio",
     "stress_index",
 ]
+DEFAULT_JSON_MODEL_NAME = "gig_bnpl_xgb_model.json"
 
 
 def _resolve_model_paths() -> tuple[Path, Path]:
@@ -69,6 +71,9 @@ def _predict_risk_probability(model: Any, row: pd.DataFrame) -> float:
     value = float(raw_prediction[0])
     if 0 <= value <= 1:
         return value
+    if isinstance(model, xgb.Booster):
+        prediction = model.predict(xgb.DMatrix(row))
+        return float(prediction[0])
     raise ValueError("Model output is not a probability and predict_proba is unavailable.")
 
 
@@ -77,13 +82,23 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
 
     model_path, metadata_path = _resolve_model_paths()
-    if not model_path.exists():
-        raise RuntimeError(
-            f"Model file not found at {model_path}. Set MODEL_PATH or place the model under backend/model."
-        )
-
     metadata = _load_metadata(metadata_path)
-    model = joblib.load(model_path)
+    if model_path.exists():
+        model = joblib.load(model_path)
+    else:
+        json_candidates = [
+            PROJECT_ROOT / "model" / DEFAULT_JSON_MODEL_NAME,
+            PROJECT_ROOT.parent / "ml-service" / DEFAULT_JSON_MODEL_NAME,
+        ]
+        json_model_path = next((path for path in json_candidates if path.exists()), None)
+        if json_model_path is None:
+            raise RuntimeError(
+                f"Model file not found at {model_path}, and JSON fallback not found. "
+                f"Set MODEL_PATH or add {DEFAULT_JSON_MODEL_NAME}."
+            )
+        booster = xgb.Booster()
+        booster.load_model(str(json_model_path))
+        model = booster
 
     app.state.model = model
     app.state.threshold = float(metadata["threshold"])
