@@ -1,0 +1,129 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-canvas: 247 242 234;
+  --color-surface: 255 252 247;
+  --color-ink: 30 27 22;
+  --color-muted: 92 85 75;
+  --color-accent: 182 92 58;
+  --color-accent-strong: 163 78 49;
+  --color-line: 230 222 211;
+  --color-highlight: 15 118 110;
+  --shadow-soft: 0 1px 1px rgba(30, 27, 22, 0.04);
+  --shadow-lift: 0 14px 24px rgba(30, 27, 22, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+body {
+  font-family: var(--font-body);
+  color: rgb(var(--color-ink));
+  background-color: rgb(var(--color-canvas));
+  background-image: linear-gradient(
+    to bottom,
+    rgba(30, 27, 22, 0.05) 1px,
+    transparent 1px
+  );
+  background-size: 100% 32px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+@layer components {
+  .page-shell {
+    @apply min-h-screen;
+  }
+
+  .card {
+    @apply bg-surface border border-line rounded-2xl shadow-soft;
+  }
+
+  .card-subtle {
+    @apply bg-surface/70 border border-line/80 rounded-2xl;
+  }
+
+  .section-title {
+    @apply text-3xl md:text-4xl font-semibold;
+  }
+
+  .section-kicker {
+    @apply text-xs uppercase tracking-[0.3em] text-muted font-semibold;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold tracking-[0.02em] text-white shadow-soft transition hover:bg-accentStrong hover:shadow-lift cursor-pointer;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center rounded-full border border-line px-6 py-3 text-sm font-semibold text-ink transition hover:border-ink hover:text-ink cursor-pointer;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold text-ink transition hover:bg-ink/5 cursor-pointer;
+  }
+
+  .btn-success {
+    @apply inline-flex items-center justify-center rounded-xl bg-highlight px-5 py-3 text-sm font-semibold text-white transition hover:bg-highlight/90 cursor-pointer;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded-xl bg-rose-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 cursor-pointer;
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink placeholder:text-muted focus:border-highlight focus:outline-none focus:ring-2 focus:ring-highlight/20;
+  }
+
+  .label {
+    @apply text-xs uppercase tracking-[0.2em] text-muted font-semibold;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-muted;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full bg-highlight/10 px-3 py-1 text-xs font-semibold text-highlight;
+  }
+
+  .table-head {
+    @apply bg-canvas text-xs uppercase tracking-wide text-muted font-semibold;
+  }
+
+  .stat-value {
+    @apply text-3xl font-semibold;
+  }
+
+  .link-muted {
+    @apply text-sm font-semibold text-muted hover:text-ink cursor-pointer;
+  }
+}

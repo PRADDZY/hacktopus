@@ -46,6 +46,7 @@ ENV/
 .mcp.json
 opencode.json
 FairLens_Render_Integration_Prompt.md
+.git-bare
 # Database
 *.db
 *.sqlite
@@ -57,6 +58,7 @@ logs/
 
 # Testing
 .pytest_cache/
+pytest_cache/
 .coverage
 htmlcov/
 .tox/
@@ -68,6 +70,12 @@ yarn-debug.log*
 yarn-error.log*
 .npm
 .yarn
+frontend/.next/
+frontend/out/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.turbo/
+frontend/.test-build/
 
 # ML Models
 *.pkl
@@ -81,7 +89,8 @@ data/raw/
 data/processed/
 *.csv
 *.parquet
-
+C:\Users\Pratik Daithankar\Desktop\hacktopus\backend.txt
+C:\Users\Pratik Daithankar\Desktop\hacktopus\frontend.txt
 # Jupyter
 
 

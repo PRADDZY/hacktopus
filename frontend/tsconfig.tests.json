@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./.test-build",
+    "rootDir": ".",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2020",
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "types": [
+      "node"
+    ],
+    "resolveJsonModule": true
+  },
+  "include": [
+    "lib/**/*.ts",
+    "types/**/*.ts",
+    "tests/unit/**/*.test.ts",
+    "tests/unit/run.ts"
+  ]
+}

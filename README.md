@@ -1,178 +1,116 @@
 # FairLens
 
-### Inclusive & Explainable BNPL Eligibility Engine
+Inclusive and explainable BNPL eligibility engine powered by cash-flow intelligence.
 
-FairLens is an AI-powered BNPL (Buy Now Pay Later) eligibility engine
-designed to enable responsible lending for gig workers, freelancers,
-students, and credit-invisible users --- without relying on traditional
-credit scores or salary slips.
+## System Overview
 
-Instead of historical credit data, FairLens evaluates real cash-flow
-sustainability to determine repayment ability in real time.
+Frontend (Next.js)
+- Unified app with shop and risk dashboard routes.
 
-------------------------------------------------------------------------
+Backend (FastAPI)
+- Orchestrates model inference, applies threshold, logs decisions to DB.
 
-## 🚨 Problem Statement
+ML Service (FastAPI)
+- Hosts the trained XGBoost model and returns risk probability.
 
-Millions of gig workers and informal earners lack traditional credit
-history, leading to financial exclusion or irresponsible BNPL approvals
-that increase default risk.
+Database
+- PostgreSQL in production, SQLite by default for local dev.
 
-Current BNPL systems: - Depend heavily on credit scores - Ignore income
-volatility - Lack transparency - Encourage overspending without deep
-affordability checks
+Flow
 
-There is a need for a real-time, explainable, cash-flow-based
-eligibility system.
+Shop checkout -> Backend -> ML Service -> Risk probability -> Approve/Decline -> Logged -> Dashboard
 
-------------------------------------------------------------------------
+## Run Locally
 
-## 💡 Our Approach
+### 1) ML Service
 
-FairLens replaces traditional credit scoring with a cash-flow
-intelligence model that evaluates:
+```bash
+cd ml-service
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 9000 --reload
+```
 
--   Income stability
--   Spending burden
--   Liquidity buffer
--   Purchase affordability
--   Repayment stress
+### 2) Backend
 
-The system:
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 10000 --reload
+```
 
-1.  Accepts financial indicators (or Excel-based feature uploads)
-2.  Uses a calibrated XGBoost model to compute risk probability
-3.  Applies a binary decision threshold (0.55)
-4.  Returns Approve / Decline instantly
-5.  Logs all decisions for portfolio monitoring
+Environment variables (backend/.env.example):
 
-Model performance: \~0.85 ROC-AUC on structured synthetic gig-economy
-cash-flow data.
+```
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+CORS_ORIGINS=http://localhost:3000
+ML_SERVICE_URL=http://localhost:9000
+ML_SERVICE_TIMEOUT=3.5
+```
 
-------------------------------------------------------------------------
+If the ML service is unavailable, the backend falls back to the local model files in `backend/model`.
 
-## 🧠 Machine Learning Methodology
+### 3) Frontend
 
-Model: - XGBoost classifier - Probability calibration (Isotonic) -
-Binary threshold: 0.55
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-Key Engineered Features: - purchase_to_inflow_ratio -
-total_burden_ratio - buffer_ratio - inflow_volatility - stress_index -
-neg_balance_days_30d
+Environment variables (frontend/.env.example):
 
-Explainability: - SHAP (SHapley Additive Explanations) - Per-user risk
-contribution analysis
+```
+NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
+NEXT_PUBLIC_USE_DEMO_DASHBOARD=false
+```
 
-The model focuses on sustainability instead of historical credit
-behavior.
+## Key Endpoints
 
-------------------------------------------------------------------------
+Backend
+- `POST /predict`
+- `GET /stats`
+- `GET /logs`
+- `GET /audit-logs`
+- `GET /health`
 
-## 🏗 System Architecture
+ML Service
+- `POST /predict`
+- `GET /health`
+- `GET /metadata`
 
-Frontend (Next.js + Tailwind) - Shop (BNPL checkout simulation) - Admin
-Dashboard (analytics & monitoring)
+## Project Structure
 
-Backend (FastAPI) - REST API endpoints - ML model inference - PostgreSQL
-logging - CORS-enabled
+```
+backend/        FastAPI API + DB logging
+ml-service/     ML inference service (model artifacts + API)
+frontend/       Unified Next.js app (shop + dashboard)
+legacy/         Previous iterations kept for reference
+shared/         OpenAPI schema for shared contracts
+```
 
-Database (PostgreSQL) - Stores all eligibility requests - Tracks risk
-scores - Enables analytics & dashboard metrics
+## Shared Types
 
-Deployment - Hosted on Render - GitHub auto-deploy enabled - Backend +
-Static frontend + Managed PostgreSQL
+Export OpenAPI and generate frontend types:
 
-------------------------------------------------------------------------
+```bash
+python backend/scripts/export_openapi.py
+cd frontend
+npm run types:generate
+```
 
-## 📊 High-Level Flow
+## Tests
 
-User → Checkout → Upload Financial Data\
-→ FastAPI Backend → XGBoost Model\
-→ Risk Probability → Approve / Decline\
-→ Log to PostgreSQL\
-→ Admin Dashboard Analytics
+Backend
+- `cd backend`
+- `python -m pytest`
+- `python -m pytest tests/integration`
 
-------------------------------------------------------------------------
+ML Service
+- `cd ml-service`
+- `python -m pytest`
 
-## 📂 Project Structure
-
-    fairlens/
-    │
-    ├── frontend/
-    │   ├── shop/
-    │   └── dashboard/
-    │
-    ├── backend/
-    │   ├── main.py
-    │   ├── model/
-    │   │   ├── bnpl_cashflow_model.pkl
-    │   │   └── model_metadata.json
-    │   ├── database.py
-    │   ├── models.py
-    │   ├── schemas.py
-    │   └── requirements.txt
-    │
-    └── FairLens_Final_Model_Training.ipynb
-
-------------------------------------------------------------------------
-
-## 🚀 Running Locally
-
-### Backend
-
-    cd backend
-    python -m venv venv
-    source venv/bin/activate   # macOS/Linux
-    venv\Scripts\activate    # Windows
-    pip install -r requirements.txt
-    uvicorn main:app --reload
-
-### Frontend
-
-    cd frontend
-    npm install
-    npm run dev
-
-Set environment variable:
-
-    NEXT_PUBLIC_API_URL=http://localhost:8000
-
-------------------------------------------------------------------------
-
-## 📚 References
-
--   XGBoost: https://xgboost.ai\
--   SHAP: https://github.com/slundberg/shap\
--   FastAPI: https://fastapi.tiangolo.com\
--   Next.js: https://nextjs.org\
--   Render: https://render.com
-
-------------------------------------------------------------------------
-
-## 🏆 Impact
-
-FairLens enables:
-
--   Financial inclusion for credit-invisible users
--   Responsible BNPL approvals
--   Reduced default risk
--   Transparent AI underwriting
--   Real-time checkout decisions
-
-------------------------------------------------------------------------
-
-## 🔮 Future Improvements
-
--   Real bank statement API integration
--   Dynamic threshold tuning
--   Fairness auditing metrics
--   Fraud detection integration
--   Real-world dataset training
-
-------------------------------------------------------------------------
-
-## 📌 Summary
-
-FairLens is an explainable AI-powered BNPL eligibility engine that
-evaluates repayment sustainability using cash-flow intelligence instead
-of traditional credit scores.
+Frontend
+- `cd frontend`
+- `npm run lint`
+- `npm run test`
+- `npm run test:e2e` (first run may require `npx playwright install`)

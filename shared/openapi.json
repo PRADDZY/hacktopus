@@ -1,0 +1,645 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FairLens API",
+    "description": "BNPL risk scoring backend for checkout and bank analytics dashboard.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predict": {
+      "post": {
+        "summary": "Predict",
+        "operationId": "predict_predict_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats": {
+      "get": {
+        "summary": "Stats",
+        "operationId": "stats_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logs": {
+      "get": {
+        "summary": "Logs",
+        "operationId": "logs_logs_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/audit-logs": {
+      "get": {
+        "summary": "Audit Logs",
+        "operationId": "audit_logs_audit_logs_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditLogItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "details": {
+            "type": "string",
+            "title": "Details"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "warning",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "actor",
+          "action",
+          "details",
+          "status",
+          "created_at"
+        ],
+        "title": "AuditLogItem"
+      },
+      "AuditLogsResponse": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditLogItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "total_pages",
+          "items"
+        ],
+        "title": "AuditLogsResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "model_loaded": {
+            "type": "boolean",
+            "title": "Model Loaded"
+          },
+          "threshold": {
+            "type": "number",
+            "title": "Threshold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "model_loaded",
+          "threshold"
+        ],
+        "title": "HealthResponse"
+      },
+      "LogItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "avg_monthly_inflow": {
+            "type": "number",
+            "title": "Avg Monthly Inflow"
+          },
+          "inflow_volatility": {
+            "type": "number",
+            "title": "Inflow Volatility"
+          },
+          "avg_monthly_outflow": {
+            "type": "number",
+            "title": "Avg Monthly Outflow"
+          },
+          "min_balance_30d": {
+            "type": "number",
+            "title": "Min Balance 30D"
+          },
+          "neg_balance_days_30d": {
+            "type": "integer",
+            "title": "Neg Balance Days 30D"
+          },
+          "purchase_to_inflow_ratio": {
+            "type": "number",
+            "title": "Purchase To Inflow Ratio"
+          },
+          "total_burden_ratio": {
+            "type": "number",
+            "title": "Total Burden Ratio"
+          },
+          "buffer_ratio": {
+            "type": "number",
+            "title": "Buffer Ratio"
+          },
+          "stress_index": {
+            "type": "number",
+            "title": "Stress Index"
+          },
+          "risk_probability": {
+            "type": "number",
+            "title": "Risk Probability"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "Approve",
+              "Decline"
+            ],
+            "title": "Decision"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "avg_monthly_inflow",
+          "inflow_volatility",
+          "avg_monthly_outflow",
+          "min_balance_30d",
+          "neg_balance_days_30d",
+          "purchase_to_inflow_ratio",
+          "total_burden_ratio",
+          "buffer_ratio",
+          "stress_index",
+          "risk_probability",
+          "decision",
+          "created_at"
+        ],
+        "title": "LogItem"
+      },
+      "LogsResponse": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LogItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "total_pages",
+          "items"
+        ],
+        "title": "LogsResponse"
+      },
+      "PredictRequest": {
+        "properties": {
+          "avg_monthly_inflow": {
+            "type": "number",
+            "title": "Avg Monthly Inflow",
+            "description": "Average monthly inflow"
+          },
+          "inflow_volatility": {
+            "type": "number",
+            "title": "Inflow Volatility",
+            "description": "Inflow volatility"
+          },
+          "avg_monthly_outflow": {
+            "type": "number",
+            "title": "Avg Monthly Outflow",
+            "description": "Average monthly outflow"
+          },
+          "min_balance_30d": {
+            "type": "number",
+            "title": "Min Balance 30D",
+            "description": "Minimum 30-day balance"
+          },
+          "neg_balance_days_30d": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Neg Balance Days 30D",
+            "description": "Negative balance days in last 30 days"
+          },
+          "purchase_to_inflow_ratio": {
+            "type": "number",
+            "title": "Purchase To Inflow Ratio",
+            "description": "Purchase to inflow ratio"
+          },
+          "total_burden_ratio": {
+            "type": "number",
+            "title": "Total Burden Ratio",
+            "description": "Total burden ratio"
+          },
+          "buffer_ratio": {
+            "type": "number",
+            "title": "Buffer Ratio",
+            "description": "Buffer ratio"
+          },
+          "stress_index": {
+            "type": "number",
+            "title": "Stress Index",
+            "description": "Stress index"
+          }
+        },
+        "type": "object",
+        "required": [
+          "avg_monthly_inflow",
+          "inflow_volatility",
+          "avg_monthly_outflow",
+          "min_balance_30d",
+          "neg_balance_days_30d",
+          "purchase_to_inflow_ratio",
+          "total_burden_ratio",
+          "buffer_ratio",
+          "stress_index"
+        ],
+        "title": "PredictRequest"
+      },
+      "PredictResponse": {
+        "properties": {
+          "risk_probability": {
+            "type": "number",
+            "title": "Risk Probability"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "Approve",
+              "Decline"
+            ],
+            "title": "Decision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "risk_probability",
+          "decision"
+        ],
+        "title": "PredictResponse"
+      },
+      "StatsResponse": {
+        "properties": {
+          "total_predictions": {
+            "type": "integer",
+            "title": "Total Predictions"
+          },
+          "approval_rate": {
+            "type": "number",
+            "title": "Approval Rate"
+          },
+          "decline_rate": {
+            "type": "number",
+            "title": "Decline Rate"
+          },
+          "risk_score_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Risk Score Distribution"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_predictions",
+          "approval_rate",
+          "decline_rate",
+          "risk_score_distribution"
+        ],
+        "title": "StatsResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -1,12 +1,13 @@
 # FairLens Backend (FastAPI)
 
-FastAPI service for BNPL risk prediction with PostgreSQL logging.
+Orchestrates BNPL risk predictions. Calls the ML service, applies the decision threshold, and logs outcomes to the database.
 
 ## Endpoints
 
 - `POST /predict`
 - `GET /stats`
 - `GET /logs?page=<int>&limit=<int>`
+- `GET /audit-logs?page=<int>&limit=<int>&status=<optional>&search=<optional>`
 - `GET /health`
 
 ## Request Contract
@@ -38,10 +39,12 @@ Response:
 
 ## Environment Variables
 
-- `DATABASE_URL` (Render PostgreSQL connection string)
+- `DATABASE_URL` (PostgreSQL connection string; defaults to SQLite)
 - `CORS_ORIGINS` (comma-separated frontend origins)
-- `MODEL_PATH` (optional)
-- `MODEL_METADATA_PATH` (optional)
+- `ML_SERVICE_URL` (default `http://localhost:9000`)
+- `ML_SERVICE_TIMEOUT` (seconds, default `3.5`)
+- `MODEL_PATH` (optional local model override)
+- `MODEL_METADATA_PATH` (optional local metadata override)
 
 ## Local Run
 
@@ -51,7 +54,12 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 10000 --reload
 ```
 
-## Render
+If the ML service is unavailable, the backend falls back to the local model files in `backend/model`.
 
-- Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn main:app --host 0.0.0.0 --port 10000`
+## Shared Types
+
+Export the OpenAPI schema for shared contracts:
+
+```bash
+python scripts/export_openapi.py
+```

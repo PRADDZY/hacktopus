@@ -1,26 +1,53 @@
-# Frontend Workspace
+﻿# FairLens Frontend
 
-This folder contains both deployable frontend applications:
+Single Next.js app containing both:
+- Shop experience (customer flow)
+- Bank risk dashboard (admin flow)
 
-- `shop/` -> customer checkout app
-- `dashboard/` -> bank/admin analytics dashboard
-
-## Shop
+## Development
 
 ```bash
-cd frontend/shop
+cd frontend
 npm install
 npm run dev
 ```
 
-## Dashboard
+Set environment variables:
 
-```bash
-cd frontend/dashboard
-npm install
-npm run dev
+```
+NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
+NEXT_PUBLIC_USE_DEMO_DASHBOARD=false
 ```
 
-Both apps use:
+## Routes
 
-- `NEXT_PUBLIC_BACKEND_URL` in `.env.example`
+Shop:
+- `/` (home)
+- `/product/[id]`
+- `/cart`
+- `/checkout`
+- `/orders`
+- `/wishlist`
+- `/profile`
+- `/support`
+- `/login`
+- `/signup`
+
+Dashboard:
+- `/dashboard`
+- `/dashboard/emi-requests`
+- `/dashboard/analytics`
+- `/dashboard/audit-logs`
+
+## Notes
+
+Dashboard uses live backend data by default. Set `NEXT_PUBLIC_USE_DEMO_DASHBOARD=true` to default to demo data. The topbar toggle lets you switch between demo/live and persists in localStorage.
+
+## Shared Types
+
+Generate API types from the backend OpenAPI schema:
+
+```bash
+python ../backend/scripts/export_openapi.py
+npm run types:generate
+```
