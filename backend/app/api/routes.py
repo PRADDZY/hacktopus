@@ -1,20 +1,39 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from ..core import AuthUser, get_current_user, require_admin_user, require_authenticated_user
 from ..core.database import get_db
 from ..schemas import (
+    AdminOverrideRequest,
+    ApplicationItem,
+    ApplicationListResponse,
     AuditLogsResponse,
     AuthMeResponse,
+    CreateApplicationRequest,
     HealthResponse,
     LogsResponse,
     PredictRequest,
     PredictResponse,
     StatsResponse,
 )
-from ..services import create_audit_log, create_transaction, get_audit_logs, get_logs, get_stats
+from ..services import (
+    create_scored_transaction,
+    create_transaction_from_checkout,
+    get_application_by_uuid,
+    get_audit_logs,
+    get_logs,
+    get_stats,
+    list_admin_applications,
+    list_user_applications,
+    override_application_decision,
+    serialize_application,
+)
 
 router = APIRouter()
+
+
+def _resolve_actor(user: AuthUser, default: str) -> str:
+    return user.email or user.subject or default
 
 
 @router.get("/", response_model=HealthResponse)
@@ -51,40 +70,24 @@ def predict(
     request: Request,
     user: AuthUser = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> PredictResponse:
     try:
-        risk_probability, source = request.app.state.model_service.predict(payload)
-        decision = "Decline" if risk_probability >= request.app.state.threshold else "Approve"
-
-        transaction = create_transaction(
-            db=db,
-            payload=payload,
-            risk_probability=risk_probability,
-            decision=decision,
-            commit=False,
-            refresh=True,
-        )
-
-        status = "success" if source == "ml_service" else "warning"
-        details = f"Decision {decision} (risk {risk_probability:.3f}) for TXN-{transaction.id}"
-        actor = user.email or user.subject or "Risk Engine"
-        create_audit_log(
+        actor = _resolve_actor(user, "Risk Engine")
+        transaction = create_scored_transaction(
             db,
+            model_service=request.app.state.model_service,
+            threshold=float(request.app.state.threshold),
+            predict_payload=payload,
             actor=actor,
-            action="Risk decision",
-            details=details,
-            status=status,
-            entity_id=str(transaction.id),
-            source=source,
-            commit=False,
-            refresh=False,
+            user_sub=user.subject,
+            idempotency_key=idempotency_key,
+            audit_action="Risk decision",
         )
-
-        db.commit()
-
+        final_decision = transaction.final_decision or transaction.decision
         return PredictResponse(
-            risk_probability=round(float(risk_probability), 6),
-            decision=decision,
+            risk_probability=round(float(transaction.risk_probability), 6),
+            decision=final_decision,
         )
     except HTTPException:
         db.rollback()
@@ -92,6 +95,125 @@ def predict(
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}") from exc
+
+
+@router.post("/v1/applications", response_model=ApplicationItem)
+def create_application(
+    payload: CreateApplicationRequest,
+    request: Request,
+    user: AuthUser = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> ApplicationItem:
+    try:
+        actor = _resolve_actor(user, "Checkout User")
+        transaction = create_transaction_from_checkout(
+            db,
+            model_service=request.app.state.model_service,
+            threshold=float(request.app.state.threshold),
+            actor=actor,
+            user_sub=user.subject,
+            payload=payload,
+            idempotency_key=idempotency_key,
+        )
+        return ApplicationItem(**serialize_application(transaction))
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create application: {exc}") from exc
+
+
+@router.get("/v1/applications/me", response_model=ApplicationListResponse)
+def list_my_applications(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=200),
+    user: AuthUser = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+) -> ApplicationListResponse:
+    if not user.subject:
+        return ApplicationListResponse(page=page, limit=limit, total=0, total_pages=1, items=[])
+
+    items, total, total_pages = list_user_applications(
+        db,
+        user_sub=user.subject,
+        page=page,
+        limit=limit,
+    )
+    return ApplicationListResponse(
+        page=page,
+        limit=limit,
+        total=total,
+        total_pages=total_pages,
+        items=[ApplicationItem(**serialize_application(item)) for item in items],
+    )
+
+
+@router.get("/v1/admin/applications", response_model=ApplicationListResponse)
+def list_admin_applications_endpoint(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=200),
+    status: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    _: AuthUser = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> ApplicationListResponse:
+    items, total, total_pages = list_admin_applications(
+        db,
+        page=page,
+        limit=limit,
+        status=status,
+        search=search,
+    )
+    return ApplicationListResponse(
+        page=page,
+        limit=limit,
+        total=total,
+        total_pages=total_pages,
+        items=[ApplicationItem(**serialize_application(item)) for item in items],
+    )
+
+
+@router.get("/v1/admin/applications/{application_uuid}", response_model=ApplicationItem)
+def get_admin_application(
+    application_uuid: str,
+    _: AuthUser = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> ApplicationItem:
+    transaction = get_application_by_uuid(db, application_uuid)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return ApplicationItem(**serialize_application(transaction))
+
+
+@router.post("/v1/admin/applications/{application_uuid}/override", response_model=ApplicationItem)
+def override_admin_application(
+    application_uuid: str,
+    payload: AdminOverrideRequest,
+    admin: AuthUser = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+    _: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> ApplicationItem:
+    try:
+        actor = _resolve_actor(admin, "Risk Ops")
+        transaction = override_application_decision(
+            db,
+            application_uuid=application_uuid,
+            decision=payload.decision,
+            reason=payload.reason,
+            actor=actor,
+        )
+        return ApplicationItem(**serialize_application(transaction))
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to override application: {exc}") from exc
 
 
 @router.get("/stats", response_model=StatsResponse)

@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
-import { fetchAuditLogs, fetchLogs, fetchStats, mapLogToEMIRequest, predictBNPLRisk } from '../../lib/fairlensApi';
-import { BackendLogItem } from '../../types';
+import {
+  createApplication,
+  fetchAdminApplication,
+  fetchAdminApplications,
+  fetchAuditLogs,
+  fetchLogs,
+  fetchStats,
+  mapLogToEMIRequest,
+  overrideAdminApplication,
+  predictBNPLRisk,
+} from '../../lib/fairlensApi';
+import { BackendApplicationItem, BackendLogItem } from '../../types';
 
 const baseLog: BackendLogItem = {
   id: 42,
@@ -62,6 +72,31 @@ export const run = async () => {
   }
 
   {
+    const applicationLog: BackendLogItem = {
+      ...baseLog,
+      application_uuid: '6b4f7f6a-39fd-4cf7-a8c7-0b9bce862f00',
+      user_sub: 'auth0|abc123',
+      order_amount_inr: 36000,
+      tenure_months: 6,
+      monthly_income_inr: 100000,
+      bank: 'HDFC Bank',
+      auto_decision: 'Decline',
+      final_decision: 'Approve',
+      decision_source: 'manual_override',
+      reviewed_by: 'admin@fairlens.ai',
+      override_reason: 'Manual underwriting approval',
+      updated_at: '2026-03-20T09:00:00Z',
+    };
+
+    const result = mapLogToEMIRequest(applicationLog);
+    assert.equal(result.applicationUuid, applicationLog.application_uuid);
+    assert.equal(result.status, 'Approved');
+    assert.equal(result.buyerId, 'auth0|abc123');
+    assert.equal(result.decisionSource, 'manual_override');
+    assert.equal(result.reviewedBy, 'admin@fairlens.ai');
+  }
+
+  {
     const statsFixture = {
       total_predictions: 4,
       approval_rate: 0.5,
@@ -85,6 +120,25 @@ export const run = async () => {
     await withMockedFetch(async () => new Response('not-json', { status: 200 }), async () => {
       await assert.rejects(fetchLogs(1, 10), /invalid json/i);
     });
+  }
+
+  {
+    const fixture: BackendApplicationItem = {
+      ...baseLog,
+      application_uuid: 'app-1',
+      auto_decision: 'Approve',
+      final_decision: 'Approve',
+      decision_source: 'auto',
+      updated_at: '2026-03-23T10:00:00Z',
+    };
+
+    await withMockedFetch(
+      async () => jsonResponse({ page: 1, limit: 10, total: 1, total_pages: 1, items: [fixture] }),
+      async () => {
+        const data = await fetchAdminApplications(1, 10);
+        assert.equal(data.items[0].application_uuid, 'app-1');
+      }
+    );
   }
 
   {
@@ -117,6 +171,67 @@ export const run = async () => {
 
     await withMockedFetch(async () => new Response('', { status: 200 }), async () => {
       await assert.rejects(predictBNPLRisk(payload), /empty response/i);
+    });
+  }
+
+  {
+    const createPayload = {
+      order_amount_inr: 45000,
+      tenure_months: 6,
+      bank: 'HDFC Bank',
+      monthly_income_inr: 90000,
+      card_type: 'credit' as const,
+      card_last_four: '1234',
+    };
+    const createdFixture: BackendApplicationItem = {
+      ...baseLog,
+      application_uuid: 'app-created',
+      auto_decision: 'Approve',
+      final_decision: 'Approve',
+      decision_source: 'auto',
+      updated_at: '2026-03-23T10:00:00Z',
+    };
+
+    await withMockedFetch(async () => jsonResponse(createdFixture), async () => {
+      const created = await createApplication(createPayload);
+      assert.equal(created.application_uuid, 'app-created');
+    });
+  }
+
+  {
+    const detailFixture: BackendApplicationItem = {
+      ...baseLog,
+      application_uuid: 'app-detail',
+      auto_decision: 'Approve',
+      final_decision: 'Approve',
+      decision_source: 'auto',
+      updated_at: '2026-03-23T10:00:00Z',
+    };
+
+    await withMockedFetch(async () => jsonResponse(detailFixture), async () => {
+      const detail = await fetchAdminApplication('app-detail');
+      assert.equal(detail.application_uuid, 'app-detail');
+    });
+  }
+
+  {
+    const overrideFixture: BackendApplicationItem = {
+      ...baseLog,
+      application_uuid: 'app-override',
+      auto_decision: 'Decline',
+      final_decision: 'Approve',
+      decision_source: 'manual_override',
+      override_reason: 'Manual review',
+      updated_at: '2026-03-23T10:00:00Z',
+    };
+
+    await withMockedFetch(async () => jsonResponse(overrideFixture), async () => {
+      const updated = await overrideAdminApplication('app-override', {
+        decision: 'Approve',
+        reason: 'Manual review',
+      });
+      assert.equal(updated.decision_source, 'manual_override');
+      assert.equal(updated.final_decision, 'Approve');
     });
   }
 

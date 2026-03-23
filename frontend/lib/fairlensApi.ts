@@ -1,9 +1,12 @@
 import {
-  AuditLogItem,
+  AdminOverrideRequest,
+  BackendApplicationItem,
+  BackendApplicationsResponse,
   BackendAuditLogsResponse,
   BackendLogItem,
   BackendLogsResponse,
   BackendStats,
+  CreateApplicationRequest,
   EMIRequest,
   FairlensPredictRequest,
   FairlensPredictResponse,
@@ -28,7 +31,9 @@ const createRequestId = (): string => {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const buildHeaders = async (options: { isMutation: boolean; includeJson: boolean }): Promise<Record<string, string>> => {
+const buildHeaders = async (
+  options: { isMutation: boolean; includeJson: boolean; idempotencyKey?: string }
+): Promise<Record<string, string>> => {
   const headers: Record<string, string> = {
     'X-Request-Id': createRequestId(),
   };
@@ -38,7 +43,7 @@ const buildHeaders = async (options: { isMutation: boolean; includeJson: boolean
   }
 
   if (options.isMutation) {
-    headers['Idempotency-Key'] = createRequestId();
+    headers['Idempotency-Key'] = options.idempotencyKey ?? createRequestId();
   }
 
   const token = await getAccessToken();
@@ -50,11 +55,15 @@ const buildHeaders = async (options: { isMutation: boolean; includeJson: boolean
 };
 
 export const mapLogToEMIRequest = (item: BackendLogItem): EMIRequest => {
+  const effectiveDecision = item.final_decision ?? item.decision;
   const riskScore = toPercent(item.risk_probability);
   const creditScore = clamp(Math.round(850 - item.risk_probability * 350), 300, 850);
   const dti = Math.round(clamp(item.total_burden_ratio, 0, 1) * 100);
   const estimatedPurchaseAmount = Math.max(0, item.avg_monthly_inflow * item.purchase_to_inflow_ratio);
-  const emiAmount = Math.round(estimatedPurchaseAmount / 6);
+  const emiAmount =
+    item.order_amount_inr && item.tenure_months
+      ? Math.round(item.order_amount_inr / Math.max(item.tenure_months, 1))
+      : Math.round(estimatedPurchaseAmount / 6);
   const existingEmis = Math.round(item.avg_monthly_outflow * 0.3);
 
   const creditScoreWeight = clamp(Math.round((1 - item.risk_probability) * 35), 5, 35);
@@ -63,18 +72,23 @@ export const mapLogToEMIRequest = (item: BackendLogItem): EMIRequest => {
   const savingsWeight = clamp(Math.round((1 - clamp(item.buffer_ratio, 0, 1)) * 10), 5, 10);
   const stabilityScore = clamp(100 - (creditScoreWeight + dtiWeight + emiLoad + savingsWeight), 10, 80);
 
+  const userSub = item.user_sub?.trim();
+  const buyerId = userSub || `BUY-${String(item.id).padStart(5, '0')}`;
+  const buyerName = userSub ? userSub.split('|').pop() || userSub : `Applicant ${item.id}`;
+
   return {
-    id: `TXN-${item.id}`,
-    buyerId: `BUY-${String(item.id).padStart(5, '0')}`,
-    buyerName: `Applicant ${item.id}`,
+    id: item.application_uuid ?? `TXN-${item.id}`,
+    applicationUuid: item.application_uuid,
+    buyerId,
+    buyerName,
     creditScore,
     dti,
     riskScore,
     debtProbability: riskScore,
     emiAmount,
-    productCategory: 'Retail Purchase',
-    status: toStatus(item.decision),
-    monthlyIncome: Math.round(item.avg_monthly_inflow),
+    productCategory: item.bank ? `EMI • ${item.bank}` : 'Retail Purchase',
+    status: toStatus(effectiveDecision),
+    monthlyIncome: Math.round(item.monthly_income_inr ?? item.avg_monthly_inflow),
     existingEmis,
     fixedExpenses: Math.round(item.avg_monthly_outflow),
     savingsBuffer: Math.round(item.min_balance_30d),
@@ -84,6 +98,11 @@ export const mapLogToEMIRequest = (item: BackendLogItem): EMIRequest => {
     savingsWeight,
     stabilityScore,
     riskProbability: item.risk_probability,
+    autoDecision: item.auto_decision ?? item.decision,
+    finalDecision: effectiveDecision,
+    decisionSource: item.decision_source ?? 'auto',
+    reviewedBy: item.reviewed_by ?? undefined,
+    overrideReason: item.override_reason ?? undefined,
     createdAt: item.created_at,
   };
 };
@@ -123,11 +142,104 @@ export async function predictBNPLRisk(payload: FairlensPredictRequest): Promise<
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `Prediction failed with status ${response.status}`);
+    throw new Error(await parseError(response));
   }
 
   return parseJsonResponse<FairlensPredictResponse>(response, 'Prediction');
+}
+
+export async function createApplication(
+  payload: CreateApplicationRequest,
+  idempotencyKey?: string
+): Promise<BackendApplicationItem> {
+  const headers = await buildHeaders({
+    isMutation: true,
+    includeJson: true,
+    idempotencyKey,
+  });
+  const response = await fetch(`${backendBaseUrl}/v1/applications`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<BackendApplicationItem>(response, 'Create application');
+}
+
+export async function fetchMyApplications(page = 1, limit = 20): Promise<BackendApplicationsResponse> {
+  const headers = await buildHeaders({ isMutation: false, includeJson: false });
+  const response = await fetch(`${backendBaseUrl}/v1/applications/me?page=${page}&limit=${limit}`, {
+    cache: 'no-store',
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<BackendApplicationsResponse>(response, 'My applications');
+}
+
+type ApplicationFilters = {
+  status?: string;
+  search?: string;
+};
+
+export async function fetchAdminApplications(
+  page = 1,
+  limit = 20,
+  filters: ApplicationFilters = {}
+): Promise<BackendApplicationsResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+
+  if (filters.status && filters.status !== 'all') {
+    params.set('status', filters.status);
+  }
+  if (filters.search?.trim()) {
+    params.set('search', filters.search.trim());
+  }
+
+  const headers = await buildHeaders({ isMutation: false, includeJson: false });
+  const response = await fetch(`${backendBaseUrl}/v1/admin/applications?${params.toString()}`, {
+    cache: 'no-store',
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<BackendApplicationsResponse>(response, 'Admin applications');
+}
+
+export async function fetchAdminApplication(applicationUuid: string): Promise<BackendApplicationItem> {
+  const headers = await buildHeaders({ isMutation: false, includeJson: false });
+  const response = await fetch(`${backendBaseUrl}/v1/admin/applications/${applicationUuid}`, {
+    cache: 'no-store',
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<BackendApplicationItem>(response, 'Admin application detail');
+}
+
+export async function overrideAdminApplication(
+  applicationUuid: string,
+  payload: AdminOverrideRequest
+): Promise<BackendApplicationItem> {
+  const headers = await buildHeaders({ isMutation: true, includeJson: true });
+  const response = await fetch(`${backendBaseUrl}/v1/admin/applications/${applicationUuid}/override`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<BackendApplicationItem>(response, 'Admin override');
 }
 
 export async function fetchStats(): Promise<BackendStats> {
@@ -140,15 +252,14 @@ export async function fetchStats(): Promise<BackendStats> {
 }
 
 export async function fetchLogs(page = 1, limit = 20): Promise<BackendLogsResponse> {
-  const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${backendBaseUrl}/logs?page=${page}&limit=${limit}`, {
-    cache: 'no-store',
-    headers,
-  });
-  if (!response.ok) {
-    throw new Error(await parseError(response));
-  }
-  return parseJsonResponse<BackendLogsResponse>(response, 'Logs');
+  const response = await fetchAdminApplications(page, limit);
+  return {
+    page: response.page,
+    limit: response.limit,
+    total: response.total,
+    total_pages: response.total_pages,
+    items: response.items,
+  };
 }
 
 type AuditLogFilters = {
@@ -186,3 +297,4 @@ export async function fetchAuditLogs(
   }
   return parseJsonResponse<BackendAuditLogsResponse>(response, 'Audit logs');
 }
+

@@ -43,6 +43,17 @@ def _build_predict_payload() -> dict[str, float | int]:
     }
 
 
+def _build_application_payload() -> dict[str, object]:
+    return {
+        "order_amount_inr": 40000,
+        "tenure_months": 6,
+        "bank": "HDFC Bank",
+        "monthly_income_inr": 80000,
+        "card_type": "credit",
+        "card_last_four": "1234",
+    }
+
+
 def test_auth_me_is_anonymous_when_auth_not_required(client_and_app):
     client, _ = client_and_app
     response = client.get("/auth/me")
@@ -62,6 +73,9 @@ def test_predict_requires_token_when_auth_enabled(client_and_app, monkeypatch):
     response = client.post("/predict", json=_build_predict_payload())
     assert response.status_code == 401
 
+    application_response = client.post("/v1/applications", json=_build_application_payload())
+    assert application_response.status_code == 401
+
 
 def test_admin_routes_enforce_role(client_and_app, monkeypatch):
     client, _ = client_and_app
@@ -71,7 +85,20 @@ def test_admin_routes_enforce_role(client_and_app, monkeypatch):
     user_response = client.get("/stats", headers={"Authorization": f"Bearer {user_token}"})
     assert user_response.status_code == 403
 
+    list_response = client.get("/v1/admin/applications", headers={"Authorization": f"Bearer {user_token}"})
+    assert list_response.status_code == 403
+
     admin_token = _build_token(roles=["admin"])
     admin_response = client.get("/stats", headers={"Authorization": f"Bearer {admin_token}"})
     assert admin_response.status_code == 200
 
+    create_response = client.post(
+        "/v1/applications",
+        json=_build_application_payload(),
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert create_response.status_code == 200
+
+    list_response = client.get("/v1/admin/applications", headers={"Authorization": f"Bearer {admin_token}"})
+    assert list_response.status_code == 200
+    assert list_response.json()["total"] >= 1

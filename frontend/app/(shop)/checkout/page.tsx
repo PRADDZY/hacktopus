@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, Loader2, XCircle } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { predictBNPLRisk } from '@/lib/fairlensApi';
+import { createApplication } from '@/lib/fairlensApi';
 import { formatCurrency } from '@/lib/format';
 import { useStore } from '@/store/StoreContext';
 
@@ -17,8 +17,10 @@ interface EMIFormData {
 }
 
 interface RiskAssessmentResult {
+  applicationUuid: string;
   decision: 'Approve' | 'Decline';
   riskProbability: number;
+  decisionSource: 'auto' | 'manual_override';
 }
 
 const steps = [
@@ -84,33 +86,6 @@ export default function CheckoutPage() {
 
   const banks = ['HDFC Bank', 'ICICI Bank', 'SBI', 'Axis Bank', 'Kotak Mahindra'];
 
-  const buildRiskPayload = (avgMonthlyInflow: number) => {
-    const monthlyEmi = calculateEMI(emiDuration);
-    const safeInflow = Math.max(avgMonthlyInflow, 1);
-    const purchaseToInflowRatio = total / safeInflow;
-    const avgMonthlyOutflow = Math.min(safeInflow * 0.95, safeInflow * 0.5 + monthlyEmi);
-    const minBalance30d = Math.max(0, safeInflow - avgMonthlyOutflow - monthlyEmi * 0.2);
-    const inflowVolatility = Math.min(1, Math.max(0.01, 0.12 + purchaseToInflowRatio * 0.2));
-    const negBalanceDays30d = minBalance30d === 0 ? 4 : minBalance30d < safeInflow * 0.08 ? 2 : 0;
-    const totalBurdenRatio = Math.min(1, (avgMonthlyOutflow + monthlyEmi) / safeInflow);
-    const bufferRatio = Math.max(0, minBalance30d / safeInflow);
-    const stressIndex = Math.min(1, inflowVolatility * 0.45 + totalBurdenRatio * 0.55);
-
-    const toFixedNum = (value: number) => Number(value.toFixed(6));
-
-    return {
-      avg_monthly_inflow: toFixedNum(safeInflow),
-      inflow_volatility: toFixedNum(inflowVolatility),
-      avg_monthly_outflow: toFixedNum(avgMonthlyOutflow),
-      min_balance_30d: toFixedNum(minBalance30d),
-      neg_balance_days_30d: negBalanceDays30d,
-      purchase_to_inflow_ratio: toFixedNum(purchaseToInflowRatio),
-      total_burden_ratio: toFixedNum(totalBurdenRatio),
-      buffer_ratio: toFixedNum(bufferRatio),
-      stress_index: toFixedNum(stressIndex),
-    };
-  };
-
   const handleAddAddress = () => {
     if (Object.values(newAddress).every(val => val.trim())) {
       const address = {
@@ -160,14 +135,26 @@ export default function CheckoutPage() {
     setRiskResult(null);
 
     try {
-      const payload = buildRiskPayload(avgMonthlyInflow);
-      const response = await predictBNPLRisk(payload);
+      const response = await createApplication({
+        order_amount_inr: total,
+        tenure_months: emiDuration,
+        bank: selectedBank,
+        monthly_income_inr: avgMonthlyInflow,
+        card_type: emiFormData.cardType,
+        card_last_four: emiFormData.cardLastFour,
+        metadata: {
+          delivery_option: deliveryOption,
+          cart_items: cart.length,
+        },
+      });
 
       setRiskResult({
-        decision: response.decision,
+        applicationUuid: response.application_uuid,
+        decision: response.final_decision,
         riskProbability: response.risk_probability,
+        decisionSource: response.decision_source,
       });
-      setEmiApprovalStatus(response.decision === 'Approve' ? 'approved' : 'rejected');
+      setEmiApprovalStatus(response.final_decision === 'Approve' ? 'approved' : 'rejected');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unable to complete EMI risk assessment';
       setEmiError(errorMessage);
@@ -206,6 +193,9 @@ export default function CheckoutPage() {
           bank: selectedBank,
           status: 'approved' as const,
           cardLastFour: emiFormData.cardLastFour,
+          applicationUuid: riskResult?.applicationUuid,
+          riskProbability: riskResult?.riskProbability,
+          decisionSource: riskResult?.decisionSource,
         } : undefined,
       };
       addOrder(order);
@@ -452,7 +442,8 @@ export default function CheckoutPage() {
 
                       {emiApprovalStatus === 'approved' && (
                         <div className="rounded-xl border border-highlight/30 bg-highlight/10 p-3 text-sm text-highlight">
-                          EMI approved · Risk probability {riskResult ? `${(riskResult.riskProbability * 100).toFixed(2)}%` : 'N/A'}
+                          EMI approved · APP-{riskResult?.applicationUuid?.slice(0, 8)} · Risk probability{' '}
+                          {riskResult ? `${(riskResult.riskProbability * 100).toFixed(2)}%` : 'N/A'}
                         </div>
                       )}
 
@@ -586,7 +577,9 @@ export default function CheckoutPage() {
               <>
                 <CheckCircle className="h-12 w-12 text-highlight mx-auto" />
                 <h3 className="text-xl font-semibold mt-4">EMI Approved</h3>
-                <p className="text-sm text-muted mt-2">Decision from {selectedBank}: Approve</p>
+                <p className="text-sm text-muted mt-2">
+                  Decision from {selectedBank}: Approve · APP-{riskResult?.applicationUuid?.slice(0, 8)}
+                </p>
                 <Button onClick={() => setShowApprovalModal(false)} className="mt-6 w-full">
                   Continue
                 </Button>

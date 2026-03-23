@@ -69,6 +69,9 @@ export interface EMIDetails {
   bank: string;
   status: 'approved' | 'rejected' | 'pending';
   cardLastFour: string;
+  applicationUuid?: string;
+  riskProbability?: number;
+  decisionSource?: 'auto' | 'manual_override';
 }
 
 export interface Notification {
@@ -98,6 +101,7 @@ export type RequestStatus = 'Pending' | 'Approved' | 'Rejected';
 
 export interface EMIRequest {
   id: string;
+  applicationUuid?: string;
   buyerId: string;
   buyerName: string;
   creditScore: number;
@@ -117,6 +121,11 @@ export interface EMIRequest {
   savingsWeight: number;
   stabilityScore: number;
   riskProbability: number;
+  autoDecision?: 'Approve' | 'Decline';
+  finalDecision?: 'Approve' | 'Decline';
+  decisionSource?: 'auto' | 'manual_override';
+  reviewedBy?: string;
+  overrideReason?: string;
   createdAt: string;
 }
 
@@ -133,6 +142,14 @@ export interface BackendStats {
 
 export interface BackendLogItem {
   id: number;
+  application_uuid?: string;
+  user_sub?: string | null;
+  order_amount_inr?: number | null;
+  tenure_months?: number | null;
+  monthly_income_inr?: number | null;
+  bank?: string | null;
+  card_type?: string | null;
+  card_last_four_masked?: string | null;
   avg_monthly_inflow: number;
   inflow_volatility: number;
   avg_monthly_outflow: number;
@@ -143,8 +160,16 @@ export interface BackendLogItem {
   buffer_ratio: number;
   stress_index: number;
   risk_probability: number;
+  model_source?: string | null;
+  auto_decision?: 'Approve' | 'Decline' | null;
+  final_decision?: 'Approve' | 'Decline' | null;
+  decision_source?: 'auto' | 'manual_override' | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  override_reason?: string | null;
   decision: 'Approve' | 'Decline';
   created_at: string;
+  updated_at?: string;
 }
 
 export interface BackendLogsResponse {
@@ -153,6 +178,37 @@ export interface BackendLogsResponse {
   total: number;
   total_pages: number;
   items: BackendLogItem[];
+}
+
+export interface CreateApplicationRequest {
+  order_amount_inr: number;
+  tenure_months: number;
+  bank: string;
+  monthly_income_inr: number;
+  card_type: 'credit' | 'fairlens';
+  card_last_four: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type BackendApplicationItem = BackendLogItem & {
+  application_uuid: string;
+  auto_decision: 'Approve' | 'Decline';
+  final_decision: 'Approve' | 'Decline';
+  decision_source: 'auto' | 'manual_override';
+  updated_at: string;
+};
+
+export interface BackendApplicationsResponse {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+  items: BackendApplicationItem[];
+}
+
+export interface AdminOverrideRequest {
+  decision: 'Approve' | 'Decline';
+  reason: string;
 }
 
 export type AuditLogStatus = 'success' | 'warning' | 'error';

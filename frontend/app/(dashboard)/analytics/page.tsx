@@ -14,7 +14,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { BackendLogItem, BackendStats } from '@/types';
-import { fetchLogs, fetchStats } from '@/lib/fairlensApi';
+import { fetchAdminApplications, fetchStats } from '@/lib/fairlensApi';
 
 type MonthlyRiskPoint = {
   month: string;
@@ -53,7 +53,7 @@ export default function AnalyticsPage() {
         setIsLoading(true);
         setError(null);
 
-        const [statsData, logsData] = await Promise.all([fetchStats(), fetchLogs(1, 200)]);
+        const [statsData, logsData] = await Promise.all([fetchStats(), fetchAdminApplications(1, 200)]);
         if (isCancelled) return;
 
         setStats(statsData);

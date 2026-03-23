@@ -6,6 +6,11 @@ Orchestrates BNPL risk predictions. Calls the ML service, applies the decision t
 
 - `GET /auth/me`
 - `POST /predict`
+- `POST /v1/applications`
+- `GET /v1/applications/me`
+- `GET /v1/admin/applications`
+- `GET /v1/admin/applications/{application_uuid}`
+- `POST /v1/admin/applications/{application_uuid}/override`
 - `GET /stats`
 - `GET /logs?page=<int>&limit=<int>`
 - `GET /audit-logs?page=<int>&limit=<int>&status=<optional>&search=<optional>`
@@ -15,6 +20,8 @@ Orchestrates BNPL risk predictions. Calls the ML service, applies the decision t
 
 - `GET /auth/me` is public and returns current auth context if bearer token is present.
 - `POST /predict` requires authentication when `AUTH_REQUIRED=true`.
+- `POST /v1/applications` and `GET /v1/applications/me` require authenticated user context.
+- `/v1/admin/*` routes require `admin` role when `AUTH_REQUIRED=true`.
 - `GET /stats`, `GET /logs`, and `GET /audit-logs` require `admin` role when `AUTH_REQUIRED=true`.
 - If auth env vars are not configured, `AUTH_REQUIRED` defaults to `false` for local development.
 

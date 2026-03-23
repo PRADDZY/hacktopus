@@ -44,6 +44,11 @@ export default function OrdersPage() {
             <div className="text-right">
               <p className="text-lg font-semibold">{formatCurrency(order.total)}</p>
               <p className="text-sm text-muted">{order.paymentMethod}</p>
+              {order.emiDetails?.applicationUuid && (
+                <p className="text-xs text-muted mt-1">
+                  APP-{order.emiDetails.applicationUuid.slice(0, 8)}
+                </p>
+              )}
             </div>
           </div>
         ))}

@@ -7,9 +7,19 @@ interface BuyerDetailsDrawerProps {
   request: EMIRequest | null;
   isOpen: boolean;
   onClose: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
+  isUpdatingDecision?: boolean;
 }
 
-export default function BuyerDetailsDrawer({ request, isOpen, onClose }: BuyerDetailsDrawerProps) {
+export default function BuyerDetailsDrawer({
+  request,
+  isOpen,
+  onClose,
+  onApprove,
+  onReject,
+  isUpdatingDecision = false,
+}: BuyerDetailsDrawerProps) {
   if (!request) return null;
 
   const incomeExpenseData = [
@@ -69,6 +79,12 @@ export default function BuyerDetailsDrawer({ request, isOpen, onClose }: BuyerDe
               <div className="card p-4">
                 <div className="text-sm text-muted">Buyer ID</div>
                 <div className="text-lg font-semibold text-ink mt-1">{request.buyerId}</div>
+              </div>
+              <div className="card p-4">
+                <div className="text-sm text-muted">Application</div>
+                <div className="text-lg font-semibold text-ink mt-1">
+                  {request.applicationUuid ? `APP-${request.applicationUuid.slice(0, 8)}` : 'Legacy'}
+                </div>
               </div>
               <div className="card p-4">
                 <div className="text-sm text-muted">Buyer Name</div>
@@ -207,10 +223,18 @@ export default function BuyerDetailsDrawer({ request, isOpen, onClose }: BuyerDe
           </div>
 
           <div className="flex space-x-3 pt-4">
-            <button className="flex-1 btn-success">
+            <button
+              onClick={onApprove}
+              disabled={isUpdatingDecision}
+              className="flex-1 btn-success disabled:opacity-60 disabled:cursor-not-allowed"
+            >
               Approve Request
             </button>
-            <button className="flex-1 btn-danger">
+            <button
+              onClick={onReject}
+              disabled={isUpdatingDecision}
+              className="flex-1 btn-danger disabled:opacity-60 disabled:cursor-not-allowed"
+            >
               Reject Request
             </button>
           </div>

@@ -42,19 +42,65 @@
         }
       }
     },
+    "/auth/me": {
+      "get": {
+        "summary": "Auth Me",
+        "operationId": "auth_me_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/predict": {
       "post": {
         "summary": "Predict",
         "operationId": "predict_predict_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PredictRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -63,6 +109,329 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PredictResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/applications": {
+      "post": {
+        "summary": "Create Application",
+        "operationId": "create_application_v1_applications_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApplicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/applications/me": {
+      "get": {
+        "summary": "List My Applications",
+        "operationId": "list_my_applications_v1_applications_me_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/applications": {
+      "get": {
+        "summary": "List Admin Applications Endpoint",
+        "operationId": "list_admin_applications_endpoint_v1_admin_applications_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/applications/{application_uuid}": {
+      "get": {
+        "summary": "Get Admin Application",
+        "operationId": "get_admin_application_v1_admin_applications__application_uuid__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Application Uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/applications/{application_uuid}/override": {
+      "post": {
+        "summary": "Override Admin Application",
+        "operationId": "override_admin_application_v1_admin_applications__application_uuid__override_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Application Uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOverrideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationItem"
                 }
               }
             }
@@ -95,13 +464,23 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/logs": {
       "get": {
         "summary": "Logs",
         "operationId": "logs_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "page",
@@ -155,6 +534,11 @@
       "get": {
         "summary": "Audit Logs",
         "operationId": "audit_logs_audit_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "page",
@@ -239,6 +623,304 @@
   },
   "components": {
     "schemas": {
+      "AdminOverrideRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "Approve",
+              "Decline"
+            ],
+            "title": "Decision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision",
+          "reason"
+        ],
+        "title": "AdminOverrideRequest"
+      },
+      "ApplicationItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "application_uuid": {
+            "type": "string",
+            "title": "Application Uuid"
+          },
+          "user_sub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Sub"
+          },
+          "order_amount_inr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Amount Inr"
+          },
+          "tenure_months": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenure Months"
+          },
+          "monthly_income_inr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Income Inr"
+          },
+          "bank": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank"
+          },
+          "card_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Type"
+          },
+          "card_last_four_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Last Four Masked"
+          },
+          "avg_monthly_inflow": {
+            "type": "number",
+            "title": "Avg Monthly Inflow"
+          },
+          "inflow_volatility": {
+            "type": "number",
+            "title": "Inflow Volatility"
+          },
+          "avg_monthly_outflow": {
+            "type": "number",
+            "title": "Avg Monthly Outflow"
+          },
+          "min_balance_30d": {
+            "type": "number",
+            "title": "Min Balance 30D"
+          },
+          "neg_balance_days_30d": {
+            "type": "integer",
+            "title": "Neg Balance Days 30D"
+          },
+          "purchase_to_inflow_ratio": {
+            "type": "number",
+            "title": "Purchase To Inflow Ratio"
+          },
+          "total_burden_ratio": {
+            "type": "number",
+            "title": "Total Burden Ratio"
+          },
+          "buffer_ratio": {
+            "type": "number",
+            "title": "Buffer Ratio"
+          },
+          "stress_index": {
+            "type": "number",
+            "title": "Stress Index"
+          },
+          "risk_probability": {
+            "type": "number",
+            "title": "Risk Probability"
+          },
+          "model_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Source"
+          },
+          "auto_decision": {
+            "type": "string",
+            "enum": [
+              "Approve",
+              "Decline"
+            ],
+            "title": "Auto Decision"
+          },
+          "final_decision": {
+            "type": "string",
+            "enum": [
+              "Approve",
+              "Decline"
+            ],
+            "title": "Final Decision"
+          },
+          "decision_source": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "manual_override"
+            ],
+            "title": "Decision Source"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "Approve",
+              "Decline"
+            ],
+            "title": "Decision"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "override_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "application_uuid",
+          "avg_monthly_inflow",
+          "inflow_volatility",
+          "avg_monthly_outflow",
+          "min_balance_30d",
+          "neg_balance_days_30d",
+          "purchase_to_inflow_ratio",
+          "total_burden_ratio",
+          "buffer_ratio",
+          "stress_index",
+          "risk_probability",
+          "auto_decision",
+          "final_decision",
+          "decision_source",
+          "decision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ApplicationItem"
+      },
+      "ApplicationListResponse": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "total_pages",
+          "items"
+        ],
+        "title": "ApplicationListResponse"
+      },
       "AuditLogItem": {
         "properties": {
           "id": {
@@ -340,6 +1022,116 @@
           "items"
         ],
         "title": "AuditLogsResponse"
+      },
+      "AuthMeResponse": {
+        "properties": {
+          "is_authenticated": {
+            "type": "boolean",
+            "title": "Is Authenticated"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Roles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_authenticated"
+        ],
+        "title": "AuthMeResponse"
+      },
+      "CreateApplicationRequest": {
+        "properties": {
+          "order_amount_inr": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Order Amount Inr",
+            "description": "Order amount in INR"
+          },
+          "tenure_months": {
+            "type": "integer",
+            "maximum": 36.0,
+            "minimum": 1.0,
+            "title": "Tenure Months",
+            "description": "Requested EMI tenure in months"
+          },
+          "bank": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Bank",
+            "description": "Selected lending bank"
+          },
+          "monthly_income_inr": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Monthly Income Inr",
+            "description": "User monthly income in INR"
+          },
+          "card_type": {
+            "type": "string",
+            "enum": [
+              "credit",
+              "fairlens"
+            ],
+            "title": "Card Type",
+            "description": "Card/account type used for EMI"
+          },
+          "card_last_four": {
+            "type": "string",
+            "maxLength": 4,
+            "minLength": 4,
+            "title": "Card Last Four",
+            "description": "Last four digits of card/account"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "Optional request metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_amount_inr",
+          "tenure_months",
+          "bank",
+          "monthly_income_inr",
+          "card_type",
+          "card_last_four"
+        ],
+        "title": "CreateApplicationRequest"
       },
       "HTTPValidationError": {
         "properties": {
@@ -639,6 +1431,12 @@
           "type"
         ],
         "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

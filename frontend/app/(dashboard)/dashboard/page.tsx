@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import KPICard from '@/components/dashboard/KPICard';
 import EMIRequestsTable from '@/components/dashboard/EMIRequestsTable';
 import BuyerDetailsDrawer from '@/components/dashboard/BuyerDetailsDrawer';
-import { fetchLogs, fetchStats, mapLogToEMIRequest } from '@/lib/fairlensApi';
+import {
+  fetchAdminApplications,
+  fetchStats,
+  mapLogToEMIRequest,
+  overrideAdminApplication,
+} from '@/lib/fairlensApi';
 import { BackendStats, EMIRequest } from '@/types';
 
 const PAGE_SIZE = 10;
@@ -25,7 +30,9 @@ export default function DashboardPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDecisionUpdating, setIsDecisionUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   useEffect(() => {
     let isCancelled = false;
@@ -37,7 +44,7 @@ export default function DashboardPage() {
 
         const [statsData, logsData] = await Promise.all([
           fetchStats(),
-          fetchLogs(currentPage, PAGE_SIZE),
+          fetchAdminApplications(currentPage, PAGE_SIZE),
         ]);
 
         if (isCancelled) return;
@@ -60,7 +67,7 @@ export default function DashboardPage() {
     return () => {
       isCancelled = true;
     };
-  }, [currentPage]);
+  }, [currentPage, refreshToken]);
 
   const pendingRequests = 0;
   const highRiskAlerts = useMemo(
@@ -77,6 +84,42 @@ export default function DashboardPage() {
 
   const handleCloseDrawer = () => {
     setIsDrawerOpen(false);
+  };
+
+  const handleOverrideDecision = async (decision: 'Approve' | 'Decline') => {
+    if (!selectedRequest?.applicationUuid) {
+      setError('Selected request does not include an application UUID.');
+      return;
+    }
+
+    const reason = window.prompt(`Reason for manual ${decision.toLowerCase()} override:`)?.trim();
+    if (!reason) {
+      return;
+    }
+
+    try {
+      setIsDecisionUpdating(true);
+      const updated = await overrideAdminApplication(selectedRequest.applicationUuid, {
+        decision,
+        reason,
+      });
+      const mapped = mapLogToEMIRequest(updated);
+      setSelectedRequest(mapped);
+      setRequests((prev) =>
+        prev.map((request) =>
+          request.applicationUuid === mapped.applicationUuid ? mapped : request
+        )
+      );
+      setRefreshToken((value) => value + 1);
+    } catch (overrideError) {
+      setError(
+        overrideError instanceof Error
+          ? overrideError.message
+          : 'Failed to apply manual decision'
+      );
+    } finally {
+      setIsDecisionUpdating(false);
+    }
   };
 
   return (
@@ -157,6 +200,9 @@ export default function DashboardPage() {
         request={selectedRequest}
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
+        onApprove={() => void handleOverrideDecision('Approve')}
+        onReject={() => void handleOverrideDecision('Decline')}
+        isUpdatingDecision={isDecisionUpdating}
       />
     </>
   );

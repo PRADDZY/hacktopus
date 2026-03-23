@@ -61,13 +61,20 @@ Environment variables (frontend/.env.example):
 
 ```
 NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
-NEXT_PUBLIC_USE_DEMO_DASHBOARD=false
+NEXT_PUBLIC_AUTH0_DOMAIN=<tenant>.auth0.com
+NEXT_PUBLIC_AUTH0_CLIENT_ID=<client-id>
+NEXT_PUBLIC_AUTH0_AUDIENCE=<api-audience>
+NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
 ```
 
 ## Key Endpoints
 
 Backend
 - `POST /predict`
+- `POST /v1/applications`
+- `GET /v1/applications/me`
+- `GET /v1/admin/applications`
+- `POST /v1/admin/applications/{application_uuid}/override`
 - `GET /stats`
 - `GET /logs`
 - `GET /audit-logs`
