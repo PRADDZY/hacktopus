@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from ..core import AuthUser, get_current_user, require_admin_user, require_authenticated_user
 from ..core.database import get_db
 from ..schemas import (
     AuditLogsResponse,
+    AuthMeResponse,
     HealthResponse,
     LogsResponse,
     PredictRequest,
@@ -33,10 +35,21 @@ def health(request: Request) -> HealthResponse:
     )
 
 
+@router.get("/auth/me", response_model=AuthMeResponse)
+def auth_me(user: AuthUser = Depends(get_current_user)) -> AuthMeResponse:
+    return AuthMeResponse(
+        is_authenticated=user.is_authenticated,
+        subject=user.subject,
+        email=user.email,
+        roles=list(user.roles),
+    )
+
+
 @router.post("/predict", response_model=PredictResponse)
 def predict(
     payload: PredictRequest,
     request: Request,
+    user: AuthUser = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ) -> PredictResponse:
     try:
@@ -54,9 +67,10 @@ def predict(
 
         status = "success" if source == "ml_service" else "warning"
         details = f"Decision {decision} (risk {risk_probability:.3f}) for TXN-{transaction.id}"
+        actor = user.email or user.subject or "Risk Engine"
         create_audit_log(
             db,
-            actor="Risk Engine",
+            actor=actor,
             action="Risk decision",
             details=details,
             status=status,
@@ -81,7 +95,10 @@ def predict(
 
 
 @router.get("/stats", response_model=StatsResponse)
-def stats(db: Session = Depends(get_db)) -> StatsResponse:
+def stats(
+    _: AuthUser = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+) -> StatsResponse:
     return StatsResponse(**get_stats(db))
 
 
@@ -89,6 +106,7 @@ def stats(db: Session = Depends(get_db)) -> StatsResponse:
 def logs(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=200),
+    _: AuthUser = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> LogsResponse:
     items, total, total_pages = get_logs(db=db, page=page, limit=limit)
@@ -107,6 +125,7 @@ def audit_logs(
     limit: int = Query(default=20, ge=1, le=200),
     status: str | None = Query(default=None),
     search: str | None = Query(default=None),
+    _: AuthUser = Depends(require_admin_user),
     db: Session = Depends(get_db),
 ) -> AuditLogsResponse:
     items, total, total_pages = get_audit_logs(

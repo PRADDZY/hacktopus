@@ -16,6 +16,10 @@ Set environment variables:
 
 ```
 NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
+NEXT_PUBLIC_AUTH0_DOMAIN=<tenant>.auth0.com
+NEXT_PUBLIC_AUTH0_CLIENT_ID=<client-id>
+NEXT_PUBLIC_AUTH0_AUDIENCE=<api-audience>
+NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
 ```
 
 ## Routes
@@ -31,6 +35,8 @@ Shop:
 - `/support`
 - `/login`
 - `/signup`
+- `/admin/login`
+- `/auth/callback`
 
 Dashboard:
 - `/dashboard`
@@ -40,7 +46,9 @@ Dashboard:
 
 ## Notes
 
-Dashboard uses live backend data only.
+- Dashboard uses live backend data only.
+- When Auth0 env vars are configured, dashboard routes require admin role from token claims.
+- API calls include `Authorization`, `X-Request-Id`, and `Idempotency-Key` headers when applicable.
 
 ## Shared Types
 

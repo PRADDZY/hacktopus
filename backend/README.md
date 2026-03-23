@@ -4,11 +4,19 @@ Orchestrates BNPL risk predictions. Calls the ML service, applies the decision t
 
 ## Endpoints
 
+- `GET /auth/me`
 - `POST /predict`
 - `GET /stats`
 - `GET /logs?page=<int>&limit=<int>`
 - `GET /audit-logs?page=<int>&limit=<int>&status=<optional>&search=<optional>`
 - `GET /health`
+
+## Route Access
+
+- `GET /auth/me` is public and returns current auth context if bearer token is present.
+- `POST /predict` requires authentication when `AUTH_REQUIRED=true`.
+- `GET /stats`, `GET /logs`, and `GET /audit-logs` require `admin` role when `AUTH_REQUIRED=true`.
+- If auth env vars are not configured, `AUTH_REQUIRED` defaults to `false` for local development.
 
 ## Request Contract
 
@@ -45,6 +53,17 @@ Response:
 - `ML_SERVICE_TIMEOUT` (seconds, default `3.5`)
 - `MODEL_PATH` (optional local model override)
 - `MODEL_METADATA_PATH` (optional local metadata override)
+- `AUTH_ISSUER_BASE_URL` or `AUTH0_ISSUER_BASE_URL` (token issuer)
+- `AUTH_AUDIENCE` or `AUTH0_AUDIENCE` (API audience)
+- `AUTH_REQUIRED` (`true` or `false`; defaults to `true` only when issuer+audience exist)
+- `AUTH_ROLE_CLAIM` (default `https://fairlens.ai/roles`)
+- `AUTH_ADMIN_ROLES` (comma-separated, default `admin`)
+- `AUTH_JWT_ALGORITHMS` (comma-separated, default `RS256`)
+- `AUTH_JWKS_URL` (optional override; defaults to `<issuer>/.well-known/jwks.json`)
+- `AUTH_SHARED_SECRET` (optional local/test secret for HS256 tokens)
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (for Supabase integration)
+
+Supabase migration baseline is in `backend/supabase/migrations`.
 
 ## Local Run
 

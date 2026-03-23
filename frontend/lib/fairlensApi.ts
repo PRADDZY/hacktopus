@@ -8,6 +8,7 @@ import {
   FairlensPredictRequest,
   FairlensPredictResponse,
 } from '@/types';
+import { getAccessToken } from '@/lib/authClient';
 
 const backendBaseUrl =
   process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') ?? 'http://localhost:10000';
@@ -19,6 +20,34 @@ const toPercent = (value: number): number => Math.round(clamp(value, 0, 1) * 100
 
 const toStatus = (decision: 'Approve' | 'Decline'): EMIRequest['status'] =>
   decision === 'Approve' ? 'Approved' : 'Rejected';
+
+const createRequestId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const buildHeaders = async (options: { isMutation: boolean; includeJson: boolean }): Promise<Record<string, string>> => {
+  const headers: Record<string, string> = {
+    'X-Request-Id': createRequestId(),
+  };
+
+  if (options.includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  if (options.isMutation) {
+    headers['Idempotency-Key'] = createRequestId();
+  }
+
+  const token = await getAccessToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+};
 
 export const mapLogToEMIRequest = (item: BackendLogItem): EMIRequest => {
   const riskScore = toPercent(item.risk_probability);
@@ -86,11 +115,10 @@ const parseJsonResponse = async <T>(response: Response, label: string): Promise<
 };
 
 export async function predictBNPLRisk(payload: FairlensPredictRequest): Promise<FairlensPredictResponse> {
+  const headers = await buildHeaders({ isMutation: true, includeJson: true });
   const response = await fetch(`${backendBaseUrl}/predict`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -103,7 +131,8 @@ export async function predictBNPLRisk(payload: FairlensPredictRequest): Promise<
 }
 
 export async function fetchStats(): Promise<BackendStats> {
-  const response = await fetch(`${backendBaseUrl}/stats`, { cache: 'no-store' });
+  const headers = await buildHeaders({ isMutation: false, includeJson: false });
+  const response = await fetch(`${backendBaseUrl}/stats`, { cache: 'no-store', headers });
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
@@ -111,7 +140,11 @@ export async function fetchStats(): Promise<BackendStats> {
 }
 
 export async function fetchLogs(page = 1, limit = 20): Promise<BackendLogsResponse> {
-  const response = await fetch(`${backendBaseUrl}/logs?page=${page}&limit=${limit}`, { cache: 'no-store' });
+  const headers = await buildHeaders({ isMutation: false, includeJson: false });
+  const response = await fetch(`${backendBaseUrl}/logs?page=${page}&limit=${limit}`, {
+    cache: 'no-store',
+    headers,
+  });
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
@@ -143,7 +176,11 @@ export async function fetchAuditLogs(
     params.set('search', normalizedSearch);
   }
 
-  const response = await fetch(`${backendBaseUrl}/audit-logs?${params.toString()}`, { cache: 'no-store' });
+  const headers = await buildHeaders({ isMutation: false, includeJson: false });
+  const response = await fetch(`${backendBaseUrl}/audit-logs?${params.toString()}`, {
+    cache: 'no-store',
+    headers,
+  });
   if (!response.ok) {
     throw new Error(await parseError(response));
   }

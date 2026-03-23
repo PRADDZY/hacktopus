@@ -1,4 +1,5 @@
-﻿import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
+import RoleGate from '@/components/auth/RoleGate';
+import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 
 export default function DashboardLayout({
@@ -7,12 +8,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex bg-canvas">
-      <DashboardSidebar />
-      <div className="flex-1 flex flex-col">
-        <DashboardTopbar />
-        <main className="flex-1 px-6 pb-12 pt-6">{children}</main>
+    <RoleGate requiredRole="admin">
+      <div className="min-h-screen flex bg-canvas">
+        <DashboardSidebar />
+        <div className="flex-1 flex flex-col">
+          <DashboardTopbar />
+          <main className="flex-1 px-6 pb-12 pt-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </RoleGate>
   );
 }
+

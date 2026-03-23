@@ -30,6 +30,7 @@ export interface User {
   email: string;
   phone: string;
   profileImage?: string;
+  roles?: string[];
 }
 
 export interface Address {

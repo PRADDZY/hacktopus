@@ -1,14 +1,38 @@
-﻿'use client';
+'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { AppState, CartItem, Product, Order, Notification, Address } from '@/types';
+import { AppState, Address, Notification, Order, Product } from '@/types';
+import {
+  beginAuthFlow,
+  getAccessToken as getProviderAccessToken,
+  getAuthProfile,
+  isAuthConfigured,
+  logoutFromAuthProvider,
+  type AuthRole,
+} from '@/lib/authClient';
 import { safeJsonParse } from '@/lib/storage';
 
+type AuthActionOptions = {
+  role?: AuthRole;
+  returnTo?: string;
+};
+
 interface StoreContextType extends AppState {
-  login: (email: string, password: string) => boolean;
-  loginWithPhone: (phone: string, otp: string) => boolean;
-  signup: (name: string, email: string, password: string, phone: string) => boolean;
-  logout: () => void;
+  isAuthReady: boolean;
+  isAuthConfigured: boolean;
+  login: (email: string, password: string, options?: AuthActionOptions) => Promise<boolean>;
+  loginWithPhone: (phone: string, otp: string, options?: AuthActionOptions) => Promise<boolean>;
+  signup: (
+    name: string,
+    email: string,
+    password: string,
+    phone: string,
+    options?: AuthActionOptions
+  ) => Promise<boolean>;
+  logout: () => Promise<void>;
+  refreshAuth: () => Promise<void>;
+  getAccessToken: () => Promise<string | null>;
+  hasRole: (role: string) => boolean;
   addToCart: (product: Product) => void;
   removeFromCart: (productId: string) => void;
   updateCartQuantity: (productId: string, quantity: number) => void;
@@ -27,6 +51,7 @@ interface StoreContextType extends AppState {
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'fairlens-store-v1';
+const DEFAULT_ROLE_CLAIM = 'https://fairlens.ai/roles';
 
 const initialState: AppState = {
   auth: {
@@ -40,33 +65,169 @@ const initialState: AppState = {
   addresses: [],
 };
 
+const readString = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+
+const toStringArray = (value: unknown): string[] => {
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()];
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const values: string[] = [];
+  for (const entry of value) {
+    const role = String(entry).trim();
+    if (role && !values.includes(role)) {
+      values.push(role);
+    }
+  }
+  return values;
+};
+
+const resolveRoles = (rawUser: Record<string, unknown>): string[] => {
+  const appMetadata = rawUser.app_metadata;
+  const appMetadataRoles =
+    typeof appMetadata === 'object' && appMetadata !== null
+      ? (appMetadata as Record<string, unknown>).roles
+      : undefined;
+
+  const roleSources = [
+    rawUser[DEFAULT_ROLE_CLAIM],
+    rawUser.roles,
+    appMetadataRoles,
+  ];
+
+  const roles: string[] = [];
+  for (const source of roleSources) {
+    for (const role of toStringArray(source)) {
+      if (!roles.includes(role)) {
+        roles.push(role);
+      }
+    }
+  }
+  return roles;
+};
+
+const mapProviderUserToAppUser = (providerUser: Record<string, unknown>) => {
+  const subject = readString(providerUser.sub) ?? readString(providerUser.user_id) ?? 'user';
+  const email = readString(providerUser.email) ?? `${subject}@unknown.local`;
+  const phone = readString(providerUser.phone_number) ?? '';
+  const roles = resolveRoles(providerUser);
+
+  const fallbackName = email.includes('@') ? email.split('@')[0] : 'User';
+  const name =
+    readString(providerUser.name) ??
+    readString(providerUser.nickname) ??
+    fallbackName;
+
+  return {
+    id: subject,
+    name,
+    email,
+    phone,
+    roles,
+  };
+};
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(initialState);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isStateReady, setIsStateReady] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const authConfigured = isAuthConfigured();
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = safeJsonParse<AppState>(stored);
       if (parsed) {
-        setState(parsed);
+        setState({
+          ...parsed,
+          auth: authConfigured ? initialState.auth : parsed.auth,
+        });
       } else {
         console.warn('Resetting invalid stored state cache');
         localStorage.removeItem(STORAGE_KEY);
       }
     }
-    setIsLoading(false);
-  }, []);
+    setIsStateReady(true);
+  }, [authConfigured]);
+
+  const refreshAuth = async () => {
+    if (!authConfigured) {
+      setIsAuthReady(true);
+      return;
+    }
+
+    try {
+      const profile = await getAuthProfile();
+      const user =
+        profile.isAuthenticated && profile.user
+          ? mapProviderUserToAppUser(profile.user as Record<string, unknown>)
+          : null;
+
+      setState((prev) => ({
+        ...prev,
+        auth: {
+          isAuthenticated: Boolean(user),
+          user,
+        },
+      }));
+    } catch {
+      setState((prev) => ({
+        ...prev,
+        auth: {
+          isAuthenticated: false,
+          user: null,
+        },
+      }));
+    } finally {
+      setIsAuthReady(true);
+    }
+  };
 
   useEffect(() => {
-    if (!isLoading) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (!isStateReady) {
+      return;
     }
-  }, [state, isLoading]);
 
-  const login = (email: string, password: string): boolean => {
+    if (!authConfigured) {
+      setIsAuthReady(true);
+      return;
+    }
+
+    void refreshAuth();
+  }, [authConfigured, isStateReady]);
+
+  useEffect(() => {
+    if (!isStateReady) {
+      return;
+    }
+
+    const persistedState: AppState = authConfigured
+      ? { ...state, auth: initialState.auth }
+      : state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistedState));
+  }, [authConfigured, isStateReady, state]);
+
+  const login = async (
+    email: string,
+    password: string,
+    options: AuthActionOptions = {}
+  ): Promise<boolean> => {
+    if (authConfigured) {
+      await beginAuthFlow({
+        mode: 'login',
+        role: options.role ?? 'user',
+        returnTo: options.returnTo,
+      });
+      return true;
+    }
+
     if (email && password) {
-      setState(prev => ({
+      const role = options.role ?? 'user';
+      setState((prev) => ({
         ...prev,
         auth: {
           isAuthenticated: true,
@@ -75,6 +236,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             name: email.split('@')[0],
             email,
             phone: '9876543210',
+            roles: [role],
           },
         },
       }));
@@ -83,9 +245,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  const loginWithPhone = (phone: string, otp: string): boolean => {
+  const loginWithPhone = async (
+    phone: string,
+    otp: string,
+    options: AuthActionOptions = {}
+  ): Promise<boolean> => {
+    if (authConfigured) {
+      await beginAuthFlow({
+        mode: 'login',
+        role: options.role ?? 'user',
+        returnTo: options.returnTo,
+      });
+      return true;
+    }
+
     if (phone && otp === '123456') {
-      setState(prev => ({
+      const role = options.role ?? 'user';
+      setState((prev) => ({
         ...prev,
         auth: {
           isAuthenticated: true,
@@ -94,6 +270,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             name: 'User',
             email: `${phone}@example.com`,
             phone,
+            roles: [role],
           },
         },
       }));
@@ -102,9 +279,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  const signup = (name: string, email: string, password: string, phone: string): boolean => {
+  const signup = async (
+    name: string,
+    email: string,
+    password: string,
+    phone: string,
+    options: AuthActionOptions = {}
+  ): Promise<boolean> => {
+    if (authConfigured) {
+      await beginAuthFlow({
+        mode: 'signup',
+        role: options.role ?? 'user',
+        returnTo: options.returnTo,
+      });
+      return true;
+    }
+
     if (name && email && password && phone) {
-      setState(prev => ({
+      const role = options.role ?? 'user';
+      setState((prev) => ({
         ...prev,
         auth: {
           isAuthenticated: true,
@@ -113,6 +306,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             name,
             email,
             phone,
+            roles: [role],
           },
         },
       }));
@@ -121,23 +315,44 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  const logout = () => {
-    setState(prev => ({
+  const logout = async () => {
+    setState((prev) => ({
       ...prev,
       auth: {
         isAuthenticated: false,
         user: null,
       },
     }));
+
+    if (authConfigured) {
+      await logoutFromAuthProvider();
+    }
+  };
+
+  const getAccessToken = async () => {
+    if (!authConfigured) {
+      return null;
+    }
+    return getProviderAccessToken();
+  };
+
+  const hasRole = (role: string): boolean => {
+    const normalized = role.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+
+    const roles = state.auth.user?.roles ?? [];
+    return roles.some((entry) => entry.trim().toLowerCase() === normalized);
   };
 
   const addToCart = (product: Product) => {
-    setState(prev => {
-      const existingItem = prev.cart.find(item => item.product.id === product.id);
+    setState((prev) => {
+      const existingItem = prev.cart.find((item) => item.product.id === product.id);
       if (existingItem) {
         return {
           ...prev,
-          cart: prev.cart.map(item =>
+          cart: prev.cart.map((item) =>
             item.product.id === product.id
               ? { ...item, quantity: item.quantity + 1 }
               : item
@@ -152,28 +367,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeFromCart = (productId: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      cart: prev.cart.filter(item => item.product.id !== productId),
+      cart: prev.cart.filter((item) => item.product.id !== productId),
     }));
   };
 
   const updateCartQuantity = (productId: string, quantity: number) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      cart: prev.cart.map(item =>
+      cart: prev.cart.map((item) =>
         item.product.id === productId ? { ...item, quantity } : item
       ),
     }));
   };
 
   const clearCart = () => {
-    setState(prev => ({ ...prev, cart: [] }));
+    setState((prev) => ({ ...prev, cart: [] }));
   };
 
   const addToWishlist = (product: Product) => {
-    setState(prev => {
-      if (prev.wishlist.some(p => p.id === product.id)) {
+    setState((prev) => {
+      if (prev.wishlist.some((p) => p.id === product.id)) {
         return prev;
       }
       return {
@@ -184,72 +399,72 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeFromWishlist = (productId: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      wishlist: prev.wishlist.filter(p => p.id !== productId),
+      wishlist: prev.wishlist.filter((p) => p.id !== productId),
     }));
   };
 
   const addOrder = (order: Order) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       orders: [order, ...prev.orders],
     }));
   };
 
   const addNotification = (notification: Notification) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       notifications: [notification, ...prev.notifications],
     }));
   };
 
   const markNotificationAsRead = (notificationId: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      notifications: prev.notifications.map(n =>
+      notifications: prev.notifications.map((n) =>
         n.id === notificationId ? { ...n, read: true } : n
       ),
     }));
   };
 
   const addAddress = (address: Address) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       addresses: [...prev.addresses, address],
     }));
   };
 
   const updateAddress = (address: Address) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      addresses: prev.addresses.map(a => (a.id === address.id ? address : a)),
+      addresses: prev.addresses.map((a) => (a.id === address.id ? address : a)),
     }));
   };
 
   const deleteAddress = (addressId: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      addresses: prev.addresses.filter(a => a.id !== addressId),
+      addresses: prev.addresses.filter((a) => a.id !== addressId),
     }));
   };
 
   const setDefaultAddress = (addressId: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
-      addresses: prev.addresses.map(a => ({
+      addresses: prev.addresses.map((a) => ({
         ...a,
         isDefault: a.id === addressId,
       })),
     }));
   };
 
-  if (isLoading) {
+  if (!isStateReady || !isAuthReady) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="card p-8 text-center">
           <div className="h-12 w-12 rounded-full border-2 border-line border-t-accent animate-spin mx-auto mb-4"></div>
-          <p className="text-sm font-semibold text-muted">Preparing your workspace...</p>
+          <p className="text-sm font-semibold text-muted">Preparing secure workspace...</p>
         </div>
       </div>
     );
@@ -259,10 +474,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     <StoreContext.Provider
       value={{
         ...state,
+        isAuthReady,
+        isAuthConfigured: authConfigured,
         login,
         loginWithPhone,
         signup,
         logout,
+        refreshAuth,
+        getAccessToken,
+        hasRole,
         addToCart,
         removeFromCart,
         updateCartQuantity,
@@ -290,3 +510,4 @@ export function useStore() {
   }
   return context;
 }
+

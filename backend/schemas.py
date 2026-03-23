@@ -1,6 +1,7 @@
 from app.schemas import (
     AuditLogItem,
     AuditLogsResponse,
+    AuthMeResponse,
     HealthResponse,
     LogItem,
     LogsResponse,
@@ -12,6 +13,7 @@ from app.schemas import (
 __all__ = [
     "AuditLogItem",
     "AuditLogsResponse",
+    "AuthMeResponse",
     "HealthResponse",
     "LogItem",
     "LogsResponse",

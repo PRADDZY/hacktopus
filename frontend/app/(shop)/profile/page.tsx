@@ -6,6 +6,10 @@ import { useStore } from '@/store/StoreContext';
 export default function ProfilePage() {
   const { auth, logout } = useStore();
 
+  const handleLogout = async () => {
+    await logout();
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
@@ -27,7 +31,7 @@ export default function ProfilePage() {
         </div>
         <div className="flex gap-3">
           <Button variant="outline">Edit profile</Button>
-          <Button onClick={logout}>Sign out</Button>
+          <Button onClick={() => void handleLogout()}>Sign out</Button>
         </div>
       </div>
     </div>
