@@ -45,6 +45,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+.dev.vars
 .mcp.json
 opencode.json
 FairLens_Render_Integration_Prompt.md

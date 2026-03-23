@@ -1,0 +1,10 @@
+name = "fairlens-api-worker"
+main = "src/index.ts"
+compatibility_date = "2026-03-24"
+workers_dev = true
+
+[vars]
+AUTH_REQUIRED = "true"
+AUTH_ROLE_CLAIM = "https://fairlens.ai/roles"
+AUTH_ADMIN_ROLES = "admin"
+AUTH_JWT_ALGORITHMS = "RS256"

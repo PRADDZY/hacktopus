@@ -10,6 +10,9 @@ Frontend (Next.js)
 Backend (FastAPI)
 - Orchestrates model inference, applies threshold, logs decisions to DB.
 
+Worker API (Cloudflare, Wave 1 foundation)
+- TypeScript runtime scaffold with Auth0 JWT verification and role guards.
+
 ML Service (FastAPI)
 - Hosts the trained XGBoost model and returns risk probability.
 
@@ -67,6 +70,14 @@ NEXT_PUBLIC_AUTH0_AUDIENCE=<api-audience>
 NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
 ```
 
+### 4) Worker API (optional in transition phase)
+
+```bash
+cd worker-api
+npm install
+npm run dev
+```
+
 ## Key Endpoints
 
 Backend
@@ -89,6 +100,7 @@ ML Service
 
 ```
 backend/        FastAPI API + DB logging
+worker-api/     Cloudflare Worker API scaffold + auth middleware
 ml-service/     ML inference service (model artifacts + API)
 frontend/       Unified Next.js app (shop + dashboard)
 legacy/         Previous iterations kept for reference
@@ -121,3 +133,7 @@ Frontend
 - `npm run lint`
 - `npm run test`
 - `npm run test:e2e` (first run may require `npx playwright install`)
+
+Worker API
+- `cd worker-api`
+- `npm test`
