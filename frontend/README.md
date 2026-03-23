@@ -16,7 +16,6 @@ Set environment variables:
 
 ```
 NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
-NEXT_PUBLIC_USE_DEMO_DASHBOARD=false
 ```
 
 ## Routes
@@ -41,7 +40,7 @@ Dashboard:
 
 ## Notes
 
-Dashboard uses live backend data by default. Set `NEXT_PUBLIC_USE_DEMO_DASHBOARD=true` to default to demo data. The topbar toggle lets you switch between demo/live and persists in localStorage.
+Dashboard uses live backend data only.
 
 ## Shared Types
 
