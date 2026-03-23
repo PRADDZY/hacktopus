@@ -101,3 +101,8 @@ frontend.txt
 tmp/
 temp/
 *.tmp
+
+# Wave 0 local-only artifacts
+ml/
+github.txt
+the-obsidian-prompt-v4.0.3.md
