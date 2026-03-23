@@ -26,6 +26,8 @@ venv/
 env/
 ENV/
 .venv/
+**/venv/
+**/.venv/
 
 # IDE
 .vscode/
@@ -47,6 +49,7 @@ ENV/
 opencode.json
 FairLens_Render_Integration_Prompt.md
 .git-bare
+local/
 # Database
 *.db
 *.sqlite
@@ -89,8 +92,8 @@ data/raw/
 data/processed/
 *.csv
 *.parquet
-C:\Users\Pratik Daithankar\Desktop\hacktopus\backend.txt
-C:\Users\Pratik Daithankar\Desktop\hacktopus\frontend.txt
+backend.txt
+frontend.txt
 # Jupyter
 
 
