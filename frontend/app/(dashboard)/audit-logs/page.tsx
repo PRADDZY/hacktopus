@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AuditLogItem } from '@/types';
 import { fetchAuditLogs } from '@/lib/fairlensApi';
-import { useDashboardMode } from '@/lib/useDashboardMode';
 
 const PAGE_SIZE = 8;
 
@@ -14,7 +13,6 @@ const statusLabels: Record<AuditLogItem['status'], string> = {
 };
 
 export default function AuditLogsPage() {
-  const { mode } = useDashboardMode();
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -32,7 +30,7 @@ export default function AuditLogsPage() {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetchAuditLogs(currentPage, PAGE_SIZE, mode, {
+        const response = await fetchAuditLogs(currentPage, PAGE_SIZE, {
           status: statusFilter,
           search: searchTerm,
         });
@@ -54,7 +52,7 @@ export default function AuditLogsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [mode, currentPage, searchTerm, statusFilter]);
+  }, [currentPage, searchTerm, statusFilter]);
 
   const { successCount, warningCount, errorCount } = useMemo(() => {
     return {

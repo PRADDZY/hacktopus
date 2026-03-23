@@ -36,7 +36,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => window.localStorage.clear());
 });
 
-test('toggles between demo and live dashboard modes', async ({ page }) => {
+test('shows live dashboard data state', async ({ page }) => {
   await page.route('**/stats', async (route) => {
     await route.fulfill({ json: statsResponse });
   });
@@ -46,8 +46,6 @@ test('toggles between demo and live dashboard modes', async ({ page }) => {
 
   await page.goto('/dashboard');
 
-  await expect(page.getByText('Demo Data')).toBeVisible();
-  await page.getByRole('button', { name: 'Switch to live' }).click();
   await expect(page.getByText('Live Data')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Switch to demo' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Switch to/i })).toHaveCount(0);
 });

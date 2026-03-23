@@ -15,7 +15,6 @@ import {
 } from 'recharts';
 import { BackendLogItem, BackendStats } from '@/types';
 import { fetchLogs, fetchStats } from '@/lib/fairlensApi';
-import { useDashboardMode } from '@/lib/useDashboardMode';
 
 type MonthlyRiskPoint = {
   month: string;
@@ -42,7 +41,6 @@ const formatMonth = (isoDate: string): string =>
 
 export default function AnalyticsPage() {
   const [stats, setStats] = useState<BackendStats>(initialStats);
-  const { mode } = useDashboardMode();
   const [logs, setLogs] = useState<BackendLogItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +53,7 @@ export default function AnalyticsPage() {
         setIsLoading(true);
         setError(null);
 
-        const [statsData, logsData] = await Promise.all([fetchStats(mode), fetchLogs(1, 200, mode)]);
+        const [statsData, logsData] = await Promise.all([fetchStats(), fetchLogs(1, 200)]);
         if (isCancelled) return;
 
         setStats(statsData);
@@ -74,7 +72,7 @@ export default function AnalyticsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [mode]);
+  }, []);
 
   const { monthlyDefaultData, riskTrendData, topRiskFactors } = useMemo(() => {
     const grouped = new Map<

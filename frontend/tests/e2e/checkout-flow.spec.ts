@@ -9,6 +9,16 @@ test('completes an EMI checkout flow', async ({ page }) => {
   page.on('dialog', async (dialog) => {
     await dialog.accept();
   });
+  await page.route('**/predict', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        decision: 'Approve',
+        risk_probability: 0.12,
+      }),
+    });
+  });
   await page.goto('/');
 
   await page.getByRole('button', { name: 'Add to cart' }).click();
@@ -39,7 +49,7 @@ test('completes an EMI checkout flow', async ({ page }) => {
   await page.setInputFiles('input[type="file"]', {
     name: '1.pdf',
     mimeType: 'application/pdf',
-    buffer: Buffer.from('demo file'),
+    buffer: Buffer.from('sample file'),
   });
   await page.getByRole('button', { name: 'Check EMI eligibility' }).click();
 

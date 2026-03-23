@@ -5,7 +5,6 @@ import KPICard from '@/components/dashboard/KPICard';
 import EMIRequestsTable from '@/components/dashboard/EMIRequestsTable';
 import BuyerDetailsDrawer from '@/components/dashboard/BuyerDetailsDrawer';
 import { fetchLogs, fetchStats, mapLogToEMIRequest } from '@/lib/fairlensApi';
-import { useDashboardMode } from '@/lib/useDashboardMode';
 import { BackendStats, EMIRequest } from '@/types';
 
 const PAGE_SIZE = 10;
@@ -19,7 +18,6 @@ const initialStats: BackendStats = {
 
 export default function DashboardPage() {
   const [selectedRequest, setSelectedRequest] = useState<EMIRequest | null>(null);
-  const { mode } = useDashboardMode();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [requests, setRequests] = useState<EMIRequest[]>([]);
   const [stats, setStats] = useState<BackendStats>(initialStats);
@@ -38,8 +36,8 @@ export default function DashboardPage() {
         setError(null);
 
         const [statsData, logsData] = await Promise.all([
-          fetchStats(mode),
-          fetchLogs(currentPage, PAGE_SIZE, mode),
+          fetchStats(),
+          fetchLogs(currentPage, PAGE_SIZE),
         ]);
 
         if (isCancelled) return;
@@ -62,7 +60,7 @@ export default function DashboardPage() {
     return () => {
       isCancelled = true;
     };
-  }, [currentPage, mode]);
+  }, [currentPage]);
 
   const pendingRequests = 0;
   const highRiskAlerts = useMemo(

@@ -70,20 +70,20 @@ export const run = async () => {
     };
 
     await withMockedFetch(async () => jsonResponse(statsFixture), async () => {
-      const stats = await fetchStats('live');
+      const stats = await fetchStats();
       assert.deepEqual(stats, statsFixture);
     });
   }
 
   {
     await withMockedFetch(async () => new Response('', { status: 200 }), async () => {
-      await assert.rejects(fetchStats('live'), /empty response/i);
+      await assert.rejects(fetchStats(), /empty response/i);
     });
   }
 
   {
     await withMockedFetch(async () => new Response('not-json', { status: 200 }), async () => {
-      await assert.rejects(fetchLogs(1, 10, 'live'), /invalid json/i);
+      await assert.rejects(fetchLogs(1, 10), /invalid json/i);
     });
   }
 
@@ -97,7 +97,7 @@ export const run = async () => {
           503
         ),
       async () => {
-        await assert.rejects(fetchStats('live'), /Backend unavailable/);
+        await assert.rejects(fetchStats(), /Backend unavailable/);
       }
     );
   }
@@ -121,14 +121,8 @@ export const run = async () => {
   }
 
   {
-    const response = await fetchAuditLogs(1, 10, 'demo', { status: 'success' });
-    assert.ok(response.total >= response.items.length);
-    assert.ok(response.items.every((item) => item.status === 'success'));
-  }
-
-  {
     await withMockedFetch(async () => new Response('not-json', { status: 200 }), async () => {
-      await assert.rejects(fetchAuditLogs(1, 5, 'live'), /invalid json/i);
+      await assert.rejects(fetchAuditLogs(1, 5), /invalid json/i);
     });
   }
 };
