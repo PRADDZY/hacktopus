@@ -9,6 +9,13 @@ Cloudflare Worker API scaffold for the migration from FastAPI runtime to Cloudfl
 - Guarded route examples:
   - `GET /v1/protected/user` (requires authenticated token when `AUTH_REQUIRED=true`)
   - `GET /v1/protected/admin` (requires admin role)
+- Domain foundation endpoints:
+  - `POST /v1/documents`
+  - `GET /v1/documents/:id`
+  - `POST /v1/assessments`
+  - `GET /v1/assessments/me`
+  - `GET /v1/admin/assessments`
+  - `POST /v1/admin/assessments/:id/override`
 
 This wave provides auth middleware and route protection primitives. Domain APIs are migrated in later waves.
 
@@ -23,6 +30,14 @@ The worker verifies bearer JWTs using:
 - Admin roles: `AUTH_ADMIN_ROLES` (default `admin`)
 
 Optional local/test fallback: `AUTH_SHARED_SECRET` for HS256 token verification.
+
+## Supabase Runtime Variables
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_REST_SCHEMA` (default `public`)
+- `RISK_APPROVAL_THRESHOLD` (default `0.55`)
+- `MODEL_VERSION` (default `worker-baseline-v1`)
 
 ## Local Development
 

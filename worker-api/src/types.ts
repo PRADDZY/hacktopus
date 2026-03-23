@@ -15,6 +15,11 @@ export type AppBindings = {
   AUTH_ADMIN_ROLES?: string;
   AUTH_JWT_ALGORITHMS?: string;
   AUTH_SHARED_SECRET?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  SUPABASE_REST_SCHEMA?: string;
+  RISK_APPROVAL_THRESHOLD?: string;
+  MODEL_VERSION?: string;
 };
 
 export type AppVariables = {

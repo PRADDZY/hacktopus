@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { optionalAuth, requireAdminAuth, requireUserAuth } from './auth';
+import domainRoutes from './routes/domain';
 import type { AppEnv } from './types';
 
 export const app = new Hono<AppEnv>();
@@ -29,3 +30,5 @@ app.get('/v1/protected/admin', requireAdminAuth, (c) =>
     role: 'admin'
   })
 );
+
+app.route('/v1', domainRoutes);

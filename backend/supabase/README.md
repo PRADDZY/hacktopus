@@ -22,5 +22,6 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 
 - `0001_core_schema.sql` creates `transactions`, `audit_logs`, and `user_roles`.
 - `0002_application_domain.sql` adds server-owned EMI application fields and indexes.
+- `0003_statement_assessment_domain.sql` adds statement-first `documents`, `extraction_jobs`, `extracted_features`, `assessments`, and `assessment_overrides`.
 - RLS is enabled by default and write access is restricted to `service_role`.
 - `user_roles` supports app-side role mapping for user/admin segmentation.

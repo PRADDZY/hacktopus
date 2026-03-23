@@ -137,3 +137,4 @@ Frontend
 Worker API
 - `cd worker-api`
 - `npm test`
+- `npx tsc --noEmit`
