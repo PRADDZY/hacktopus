@@ -34,7 +34,7 @@ export default function LoginPage() {
 
       <div className="card p-6 space-y-4">
         <h2 className="text-lg font-semibold">Phone login</h2>
-        <p className="text-sm text-muted">Use OTP 123456 for demo access.</p>
+        <p className="text-sm text-muted">Enter the OTP sent to your phone.</p>
         <input className="input-field" placeholder="Phone number" value={phone} onChange={(e) => setPhone(e.target.value)} />
         <input className="input-field" placeholder="OTP" value={otp} onChange={(e) => setOtp(e.target.value)} />
         <Button
