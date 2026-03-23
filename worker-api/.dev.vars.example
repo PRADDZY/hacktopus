@@ -10,6 +10,9 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 SUPABASE_REST_SCHEMA=public
 RISK_APPROVAL_THRESHOLD=0.55
 MODEL_VERSION=worker-baseline-v1
+MODAL_EXTRACTION_ENDPOINT=https://<modal-endpoint>/extract
+# MODAL_EXTRACTION_TOKEN=<optional-modal-bearer-token>
+EXTRACTION_CALLBACK_SECRET=<shared-callback-secret>
 
 # Local test convenience only. Keep unset in real environments.
 # AUTH_SHARED_SECRET=<local-dev-only-secret>

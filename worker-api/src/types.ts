@@ -20,6 +20,9 @@ export type AppBindings = {
   SUPABASE_REST_SCHEMA?: string;
   RISK_APPROVAL_THRESHOLD?: string;
   MODEL_VERSION?: string;
+  MODAL_EXTRACTION_ENDPOINT?: string;
+  MODAL_EXTRACTION_TOKEN?: string;
+  EXTRACTION_CALLBACK_SECRET?: string;
 };
 
 export type AppVariables = {

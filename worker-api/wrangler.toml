@@ -11,3 +11,8 @@ AUTH_JWT_ALGORITHMS = "RS256"
 SUPABASE_REST_SCHEMA = "public"
 RISK_APPROVAL_THRESHOLD = "0.55"
 MODEL_VERSION = "worker-baseline-v1"
+# MODAL_EXTRACTION_ENDPOINT should be set per environment if using async extraction dispatch.
+# Set secrets with:
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#   wrangler secret put MODAL_EXTRACTION_TOKEN
+#   wrangler secret put EXTRACTION_CALLBACK_SECRET

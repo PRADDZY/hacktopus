@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Context, Hono } from 'hono';
 import { requireAdminAuth, requireUserAuth } from '../auth';
 import { failure, success, toApiStatus } from '../http';
 import { SupabaseError, SupabaseRestClient } from '../supabase';
@@ -35,6 +35,17 @@ type AssessmentRecord = {
   decision_source: 'auto' | 'manual_override';
   reviewed_by?: string | null;
   override_reason?: string | null;
+};
+
+type ExtractionJobRecord = {
+  id: string;
+  document_id: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  provider?: string | null;
+  external_job_id?: string | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
 };
 
 const routes = new Hono<AppEnv>();
@@ -74,6 +85,19 @@ const normalizeDecision = (value: unknown): Decision | null => {
   return null;
 };
 
+const normalizeJobStatus = (
+  value: unknown
+): 'queued' | 'processing' | 'completed' | 'failed' | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (['queued', 'processing', 'completed', 'failed'].includes(normalized)) {
+    return normalized as 'queued' | 'processing' | 'completed' | 'failed';
+  }
+  return null;
+};
+
 const parsePage = (value: string | undefined): number => {
   const parsed = Number(value ?? '1');
   if (!Number.isFinite(parsed) || parsed < 1) {
@@ -101,6 +125,12 @@ const getThreshold = (env: AppEnv['Bindings']): number => {
 const getModelVersion = (env: AppEnv['Bindings']): string =>
   asNonEmpty(env.MODEL_VERSION) ?? 'worker-baseline-v1';
 
+const getModalEndpoint = (env: AppEnv['Bindings']): string | null =>
+  asNonEmpty(env.MODAL_EXTRACTION_ENDPOINT);
+
+const getCallbackSecret = (env: AppEnv['Bindings']): string | null =>
+  asNonEmpty(env.EXTRACTION_CALLBACK_SECRET);
+
 const computeRiskProbability = (payload: Record<string, unknown>): number => {
   const read = (key: string, fallback: number): number => {
     const value = payload[key];
@@ -127,6 +157,88 @@ const computeRiskProbability = (payload: Record<string, unknown>): number => {
 
 const toDecision = (riskProbability: number, threshold: number): Decision =>
   riskProbability >= threshold ? 'Decline' : 'Approve';
+
+const dispatchExtractionToModal = async ({
+  c,
+  supabase,
+  document,
+  extractionJob
+}: {
+  c: Context<AppEnv>;
+  supabase: SupabaseRestClient;
+  document: DocumentRecord;
+  extractionJob: ExtractionJobRecord;
+}): Promise<{ extractionJobStatus: string; externalJobId: string | null }> => {
+  const endpoint = getModalEndpoint(c.env);
+  if (!endpoint) {
+    return {
+      extractionJobStatus: extractionJob.status,
+      externalJobId: extractionJob.external_job_id ?? null
+    };
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  const modalToken = asNonEmpty(c.env.MODAL_EXTRACTION_TOKEN);
+  if (modalToken) {
+    headers.Authorization = `Bearer ${modalToken}`;
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        extraction_job_id: extractionJob.id,
+        document_id: document.id,
+        owner_sub: document.owner_sub,
+        storage_key: document.storage_key,
+        source: document.source ?? 'upload'
+      })
+    });
+
+    if (!response.ok) {
+      return {
+        extractionJobStatus: extractionJob.status,
+        externalJobId: extractionJob.external_job_id ?? null
+      };
+    }
+
+    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const externalJobId = asNonEmpty(payload.job_id) ?? asNonEmpty(payload.id) ?? null;
+
+    const updatedJob = await supabase.updateOne<ExtractionJobRecord>(
+      'extraction_jobs',
+      { id: extractionJob.id },
+      {
+        status: 'processing',
+        external_job_id: externalJobId,
+        started_at: new Date().toISOString(),
+        error_message: null
+      }
+    );
+
+    await supabase.updateOne<DocumentRecord>(
+      'documents',
+      { id: document.id },
+      {
+        status: 'processing',
+        error_message: null
+      }
+    );
+
+    return {
+      extractionJobStatus: updatedJob?.status ?? 'processing',
+      externalJobId: updatedJob?.external_job_id ?? externalJobId
+    };
+  } catch {
+    return {
+      extractionJobStatus: extractionJob.status,
+      externalJobId: extractionJob.external_job_id ?? null
+    };
+  }
+};
 
 routes.post('/documents', requireUserAuth, async (c) => {
   const user = c.get('authUser');
@@ -157,7 +269,7 @@ routes.post('/documents', requireUserAuth, async (c) => {
       status: 'queued'
     });
 
-    const extractionJob = await supabase.insertOne<{ id: string; status: string }>('extraction_jobs', {
+    const extractionJob = await supabase.insertOne<ExtractionJobRecord>('extraction_jobs', {
       document_id: createdDocument.id,
       status: 'queued',
       provider: 'modal'
@@ -172,12 +284,23 @@ routes.post('/documents', requireUserAuth, async (c) => {
       }
     );
 
+    const dispatchResult = await dispatchExtractionToModal({
+      c,
+      supabase,
+      document: {
+        ...createdDocument,
+        ...(patchedDocument ?? {})
+      },
+      extractionJob
+    });
+
     return success(
       c,
       {
         ...createdDocument,
         extraction_job_id: extractionJob.id,
-        extraction_job_status: extractionJob.status,
+        extraction_job_status: dispatchResult.extractionJobStatus,
+        external_job_id: dispatchResult.externalJobId,
         ...(patchedDocument ?? {})
       },
       201
@@ -212,6 +335,169 @@ routes.get('/documents/:id', requireUserAuth, async (c) => {
       return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
     }
     return failure(c, { code: 'internal_error', message: 'Failed to fetch document' }, 500);
+  }
+});
+
+routes.get('/extraction-jobs/:id', requireUserAuth, async (c) => {
+  const user = c.get('authUser');
+  const extractionJobId = c.req.param('id');
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const extractionJob = await supabase.selectOne<ExtractionJobRecord>('extraction_jobs', {
+      id: extractionJobId
+    });
+    if (!extractionJob) {
+      return failure(c, { code: 'not_found', message: 'Extraction job not found' }, 404);
+    }
+
+    const document = await supabase.selectOne<DocumentRecord>('documents', {
+      id: extractionJob.document_id
+    });
+    if (!document) {
+      return failure(c, { code: 'not_found', message: 'Document not found' }, 404);
+    }
+
+    const userIsAdmin = isAdmin(c.env, user.roles);
+    if (!userIsAdmin && (!user.subject || user.subject !== document.owner_sub)) {
+      return failure(c, { code: 'forbidden', message: 'You cannot access this extraction job' }, 403);
+    }
+
+    return success(
+      c,
+      {
+        id: extractionJob.id,
+        document_id: extractionJob.document_id,
+        status: extractionJob.status,
+        external_job_id: extractionJob.external_job_id ?? null,
+        error_message: extractionJob.error_message ?? null,
+        document_status: document.status ?? null
+      },
+      200
+    );
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to fetch extraction job' }, 500);
+  }
+});
+
+routes.post('/extraction-jobs/:id/callback', async (c) => {
+  const callbackSecret = getCallbackSecret(c.env);
+  const providedSecret = asNonEmpty(c.req.header('X-Callback-Secret'));
+
+  if (!callbackSecret || providedSecret !== callbackSecret) {
+    return failure(c, { code: 'unauthorized', message: 'Invalid callback secret' }, 401);
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await c.req.json()) as Record<string, unknown>;
+  } catch {
+    return failure(c, { code: 'invalid_request', message: 'Invalid JSON body' }, 400);
+  }
+
+  const extractionJobId = c.req.param('id');
+  const status = normalizeJobStatus(body.status);
+  if (!status) {
+    return failure(c, { code: 'invalid_request', message: 'status is required' }, 400);
+  }
+
+  const externalJobId = asNonEmpty(body.external_job_id);
+  const errorMessage = asNonEmpty(body.error_message);
+  const features =
+    body.features && typeof body.features === 'object' && !Array.isArray(body.features)
+      ? (body.features as Record<string, unknown>)
+      : null;
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const extractionJob = await supabase.selectOne<ExtractionJobRecord>('extraction_jobs', {
+      id: extractionJobId
+    });
+    if (!extractionJob) {
+      return failure(c, { code: 'not_found', message: 'Extraction job not found' }, 404);
+    }
+
+    const document = await supabase.selectOne<DocumentRecord>('documents', {
+      id: extractionJob.document_id
+    });
+    if (!document) {
+      return failure(c, { code: 'not_found', message: 'Document not found' }, 404);
+    }
+
+    if (status === 'completed' && !features) {
+      return failure(
+        c,
+        { code: 'invalid_request', message: 'features are required when status is completed' },
+        400
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    const patchedJob = await supabase.updateOne<ExtractionJobRecord>(
+      'extraction_jobs',
+      { id: extractionJob.id },
+      {
+        status,
+        external_job_id: externalJobId ?? extractionJob.external_job_id ?? null,
+        error_message: status === 'failed' ? errorMessage : null,
+        started_at: status === 'processing' ? nowIso : extractionJob.started_at ?? null,
+        finished_at: status === 'completed' || status === 'failed' ? nowIso : null
+      }
+    );
+
+    if (status === 'completed' && features) {
+      const existingFeature = await supabase.selectOne<ExtractedFeatureRecord>('extracted_features', {
+        document_id: document.id
+      });
+
+      if (existingFeature) {
+        await supabase.updateOne<ExtractedFeatureRecord>(
+          'extracted_features',
+          { id: existingFeature.id },
+          {
+            payload: features
+          }
+        );
+      } else {
+        await supabase.insertOne<ExtractedFeatureRecord>('extracted_features', {
+          document_id: document.id,
+          owner_sub: document.owner_sub,
+          payload: features
+        });
+      }
+    }
+
+    const documentStatus =
+      status === 'completed' ? 'ready' : status === 'failed' ? 'failed' : status === 'processing' ? 'processing' : 'queued';
+
+    const patchedDocument = await supabase.updateOne<DocumentRecord>(
+      'documents',
+      { id: document.id },
+      {
+        status: documentStatus,
+        error_message: status === 'failed' ? errorMessage : null
+      }
+    );
+
+    return success(
+      c,
+      {
+        id: patchedJob?.id ?? extractionJob.id,
+        document_id: extractionJob.document_id,
+        status: patchedJob?.status ?? status,
+        external_job_id: patchedJob?.external_job_id ?? externalJobId ?? null,
+        document_status: patchedDocument?.status ?? documentStatus
+      },
+      200
+    );
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to process extraction callback' }, 500);
   }
 });
 

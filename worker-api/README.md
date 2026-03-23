@@ -12,6 +12,8 @@ Cloudflare Worker API scaffold for the migration from FastAPI runtime to Cloudfl
 - Domain foundation endpoints:
   - `POST /v1/documents`
   - `GET /v1/documents/:id`
+  - `GET /v1/extraction-jobs/:id`
+  - `POST /v1/extraction-jobs/:id/callback`
   - `POST /v1/assessments`
   - `GET /v1/assessments/me`
   - `GET /v1/admin/assessments`
@@ -38,6 +40,9 @@ Optional local/test fallback: `AUTH_SHARED_SECRET` for HS256 token verification.
 - `SUPABASE_REST_SCHEMA` (default `public`)
 - `RISK_APPROVAL_THRESHOLD` (default `0.55`)
 - `MODEL_VERSION` (default `worker-baseline-v1`)
+- `MODAL_EXTRACTION_ENDPOINT` (optional, enables dispatch during document creation)
+- `MODAL_EXTRACTION_TOKEN` (optional bearer token for Modal endpoint)
+- `EXTRACTION_CALLBACK_SECRET` (required for callback endpoint verification)
 
 ## Local Development
 
