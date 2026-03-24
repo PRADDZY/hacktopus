@@ -12,6 +12,7 @@ Backend (FastAPI)
 
 Worker API (Cloudflare, Wave 1 foundation)
 - TypeScript runtime scaffold with Auth0 JWT verification and role guards.
+- Wave 4 contract hardening: unified response envelope, request-id tracing, idempotent mutation routes.
 
 ML Service (FastAPI)
 - Hosts the trained XGBoost model and returns risk probability.
@@ -136,5 +137,5 @@ Frontend
 
 Worker API
 - `cd worker-api`
-- `npm test`
+- `npm test` (in restricted sandboxes, use `npx tsc --noEmit` when process spawning is blocked)
 - `npx tsc --noEmit`

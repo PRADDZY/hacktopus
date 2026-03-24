@@ -1,4 +1,4 @@
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import type { AppEnv } from './types';
 
 type ApiError = {
@@ -7,21 +7,39 @@ type ApiError = {
   details?: unknown;
 };
 
-export type ApiStatus = 200 | 201 | 400 | 401 | 403 | 404 | 500 | 503;
+export type ApiStatus = 200 | 201 | 400 | 401 | 403 | 404 | 409 | 500 | 503;
+export const REQUEST_ID_HEADER = 'X-Request-Id';
 
 export const toApiStatus = (value: number, fallback: ApiStatus = 500): ApiStatus => {
-  if ([200, 201, 400, 401, 403, 404, 500, 503].includes(value)) {
+  if ([200, 201, 400, 401, 403, 404, 409, 500, 503].includes(value)) {
     return value as ApiStatus;
   }
   return fallback;
 };
 
-const getRequestId = (c: Context<AppEnv>): string => {
-  const incoming = c.req.header('X-Request-Id')?.trim();
+const createRequestId = (c: Context<AppEnv>): string => {
+  const incoming = c.req.header(REQUEST_ID_HEADER)?.trim();
   if (incoming) {
     return incoming;
   }
   return crypto.randomUUID();
+};
+
+export const getRequestId = (c: Context<AppEnv>): string => {
+  const fromContext = c.get('requestId');
+  if (typeof fromContext === 'string' && fromContext.trim()) {
+    return fromContext;
+  }
+
+  const requestId = createRequestId(c);
+  c.set('requestId', requestId);
+  return requestId;
+};
+
+export const requestContextMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const requestId = getRequestId(c);
+  await next();
+  c.header(REQUEST_ID_HEADER, requestId);
 };
 
 const getMeta = (c: Context<AppEnv>) => ({

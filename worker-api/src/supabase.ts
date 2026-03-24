@@ -11,7 +11,18 @@ export class SupabaseError extends Error {
   }
 }
 
-type QueryFilters = Record<string, string | number>;
+type FilterValue =
+  | string
+  | number
+  | boolean
+  | {
+      op: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike';
+      value: string | number | boolean;
+    };
+
+type QueryParams = Record<string, string>;
+export type QueryFilters = Record<string, FilterValue>;
+export type SupabaseQueryParams = QueryParams;
 
 const asNonEmpty = (value: string | undefined): string | null => {
   const normalized = value?.trim();
@@ -55,6 +66,7 @@ export class SupabaseRestClient {
       limit?: number;
       offset?: number;
       select?: string;
+      query?: QueryParams;
     }
   ): URL {
     const normalizedBase = this.baseUrl.replace(/\/$/, '');
@@ -73,14 +85,22 @@ export class SupabaseRestClient {
       url.searchParams.set('offset', String(extras.offset));
     }
 
-    for (const [column, value] of Object.entries(filters)) {
-      url.searchParams.set(column, `eq.${String(value)}`);
+    for (const [column, rawValue] of Object.entries(filters)) {
+      if (typeof rawValue === 'object' && rawValue !== null && 'op' in rawValue) {
+        url.searchParams.set(column, `${rawValue.op}.${String(rawValue.value)}`);
+        continue;
+      }
+      url.searchParams.set(column, `eq.${String(rawValue)}`);
+    }
+
+    for (const [param, value] of Object.entries(extras?.query ?? {})) {
+      url.searchParams.set(param, value);
     }
 
     return url;
   }
 
-  private headers(prefer?: string): HeadersInit {
+  private headers(prefer?: string | string[]): HeadersInit {
     const headers: Record<string, string> = {
       apikey: this.serviceRoleKey,
       Authorization: `Bearer ${this.serviceRoleKey}`,
@@ -90,7 +110,9 @@ export class SupabaseRestClient {
       'Content-Profile': this.schema
     };
 
-    if (prefer) {
+    if (Array.isArray(prefer) && prefer.length > 0) {
+      headers.Prefer = prefer.join(',');
+    } else if (typeof prefer === 'string' && prefer.trim()) {
       headers.Prefer = prefer;
     }
 
@@ -109,7 +131,7 @@ export class SupabaseRestClient {
     }
   }
 
-  private async request<T>({
+  private async requestRaw({
     method,
     table,
     filters,
@@ -118,6 +140,7 @@ export class SupabaseRestClient {
     order,
     limit,
     offset,
+    query,
     prefer
   }: {
     method: 'GET' | 'POST' | 'PATCH';
@@ -128,9 +151,10 @@ export class SupabaseRestClient {
     order?: string;
     limit?: number;
     offset?: number;
-    prefer?: string;
-  }): Promise<T> {
-    const url = this.buildUrl(table, filters, { select, order, limit, offset });
+    query?: QueryParams;
+    prefer?: string | string[];
+  }): Promise<{ payload: unknown; response: Response }> {
+    const url = this.buildUrl(table, filters, { select, order, limit, offset, query });
     const response = await fetch(url.toString(), {
       method,
       headers: this.headers(prefer),
@@ -143,6 +167,44 @@ export class SupabaseRestClient {
       throw new SupabaseError(message, response.status);
     }
 
+    return { payload, response };
+  }
+
+  private async request<T>({
+    method,
+    table,
+    filters,
+    body,
+    select,
+    order,
+    limit,
+    offset,
+    query,
+    prefer
+  }: {
+    method: 'GET' | 'POST' | 'PATCH';
+    table: string;
+    filters?: QueryFilters;
+    body?: unknown;
+    select?: string;
+    order?: string;
+    limit?: number;
+    offset?: number;
+    query?: QueryParams;
+    prefer?: string | string[];
+  }): Promise<T> {
+    const { payload } = await this.requestRaw({
+      method,
+      table,
+      filters,
+      body,
+      select,
+      order,
+      limit,
+      offset,
+      query,
+      prefer
+    });
     return payload as T;
   }
 
@@ -167,6 +229,7 @@ export class SupabaseRestClient {
       order?: string;
       limit?: number;
       offset?: number;
+      query?: QueryParams;
     } = {}
   ): Promise<T[]> {
     const payload = await this.request<unknown[]>({
@@ -176,13 +239,54 @@ export class SupabaseRestClient {
       select: options.select ?? '*',
       order: options.order,
       limit: options.limit,
-      offset: options.offset
+      offset: options.offset,
+      query: options.query
     });
 
     if (!Array.isArray(payload)) {
       return [];
     }
     return payload as T[];
+  }
+
+  private parseTotalFromContentRange(contentRange: string | null, fallback: number): number {
+    if (!contentRange) {
+      return fallback;
+    }
+    const [, rawTotal] = contentRange.split('/');
+    const total = Number(rawTotal);
+    if (!Number.isFinite(total) || total < 0) {
+      return fallback;
+    }
+    return total;
+  }
+
+  async selectManyWithCount<T>(
+    table: string,
+    options: {
+      filters?: QueryFilters;
+      select?: string;
+      order?: string;
+      limit?: number;
+      offset?: number;
+      query?: QueryParams;
+    } = {}
+  ): Promise<{ items: T[]; total: number }> {
+    const { payload, response } = await this.requestRaw({
+      method: 'GET',
+      table,
+      filters: options.filters,
+      select: options.select ?? '*',
+      order: options.order,
+      limit: options.limit,
+      offset: options.offset,
+      query: options.query,
+      prefer: 'count=exact'
+    });
+
+    const items = Array.isArray(payload) ? (payload as T[]) : [];
+    const total = this.parseTotalFromContentRange(response.headers.get('Content-Range'), items.length);
+    return { items, total };
   }
 
   async insertOne<T>(table: string, row: Record<string, unknown>): Promise<T> {

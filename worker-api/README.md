@@ -21,6 +21,32 @@ Cloudflare Worker API scaffold for the migration from FastAPI runtime to Cloudfl
 
 This wave provides auth middleware and route protection primitives. Domain APIs are migrated in later waves.
 
+## API Response Contract (Wave 4)
+
+All endpoints return a single envelope:
+
+```json
+{
+  "data": {},
+  "error": null,
+  "meta": {
+    "requestId": "req_123",
+    "timestamp": "2026-03-24T00:00:00.000Z"
+  }
+}
+```
+
+- Error responses return `data: null` with an `error` object.
+- Request id is read from `X-Request-Id` if present; otherwise generated server-side.
+- Response always includes `X-Request-Id`.
+
+## Idempotency
+
+- `POST /v1/documents` and `POST /v1/assessments` require `Idempotency-Key`.
+- Reusing the same key with the same payload replays the previous response.
+- Reusing the same key with a different payload returns `409 idempotency_conflict`.
+- Duplicate in-flight requests return `409 idempotency_in_progress`.
+
 ## Auth0 JWT Verification
 
 The worker verifies bearer JWTs using:
@@ -40,9 +66,21 @@ Optional local/test fallback: `AUTH_SHARED_SECRET` for HS256 token verification.
 - `SUPABASE_REST_SCHEMA` (default `public`)
 - `RISK_APPROVAL_THRESHOLD` (default `0.55`)
 - `MODEL_VERSION` (default `worker-baseline-v1`)
+- `IDEMPOTENCY_TTL_SECONDS` (default `86400`)
 - `MODAL_EXTRACTION_ENDPOINT` (optional, enables dispatch during document creation)
 - `MODAL_EXTRACTION_TOKEN` (optional bearer token for Modal endpoint)
 - `EXTRACTION_CALLBACK_SECRET` (required for callback endpoint verification)
+
+## Admin Assessment Filters
+
+`GET /v1/admin/assessments` supports:
+
+- `status` (`Approve|Decline`)
+- `owner_sub`
+- `reviewed_by` (partial match)
+- `decision_source` (`auto|manual_override`)
+- `q` (search over `owner_sub`, `reviewed_by`, `override_reason`)
+- `page`, `limit`
 
 ## Local Development
 

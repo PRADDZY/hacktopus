@@ -59,6 +59,19 @@ describe('Worker extraction lifecycle', () => {
       const url = new URL(String(input));
       const method = (init?.method || 'GET').toUpperCase();
 
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'POST') {
+        return jsonResponse([
+          {
+            id: 'idem-extract-doc-10',
+            owner_sub: 'auth0|user-123',
+            route_key: 'post:/v1/documents',
+            idempotency_key: 'idem-extract-doc-10',
+            request_hash: 'hash-doc-10',
+            state: 'in_progress'
+          }
+        ]);
+      }
+
       if (url.pathname.endsWith('/documents') && method === 'POST') {
         return jsonResponse([
           { id: 'doc-10', owner_sub: 'auth0|user-123', storage_key: 'uploads/10.pdf', status: 'queued' }
@@ -88,6 +101,15 @@ describe('Worker extraction lifecycle', () => {
           { id: 'job-10', document_id: 'doc-10', status: 'processing', external_job_id: 'modal-job-10' }
         ]);
       }
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'PATCH') {
+        return jsonResponse([
+          {
+            id: 'idem-extract-doc-10',
+            state: 'completed',
+            response_status: 201
+          }
+        ]);
+      }
 
       return jsonResponse({ message: `Unexpected request ${method} ${url.pathname}` }, 500);
     });
@@ -99,6 +121,7 @@ describe('Worker extraction lifecycle', () => {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
+          'Idempotency-Key': 'idem-extract-doc-10',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

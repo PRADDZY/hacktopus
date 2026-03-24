@@ -33,17 +33,59 @@ const signToken = async (roles: string[] = []): Promise<string> => {
     .sign(new TextEncoder().encode(SHARED_SECRET));
 };
 
+type ApiEnvelope<T> = {
+  data: T | null;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  } | null;
+  meta: {
+    requestId: string;
+    timestamp: string;
+  };
+};
+
 describe('Cloudflare Worker auth middleware', () => {
   it('returns health status without auth', async () => {
     const res = await app.request('/health', undefined, createEnv());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'ok', runtime: 'cloudflare-worker' });
+    const payload = (await res.json()) as ApiEnvelope<{ status: string; runtime: string }>;
+    expect(payload.error).toBeNull();
+    expect(payload.data).toEqual({ status: 'ok', runtime: 'cloudflare-worker' });
+    expect(payload.meta.requestId).toBeTruthy();
+    expect(payload.meta.timestamp).toBeTruthy();
+    expect(res.headers.get('X-Request-Id')).toBe(payload.meta.requestId);
+  });
+
+  it('propagates request id when X-Request-Id is provided', async () => {
+    const res = await app.request(
+      '/health',
+      {
+        headers: {
+          'X-Request-Id': 'req-fixed-123'
+        }
+      },
+      createEnv()
+    );
+
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as ApiEnvelope<{ status: string; runtime: string }>;
+    expect(payload.meta.requestId).toBe('req-fixed-123');
+    expect(res.headers.get('X-Request-Id')).toBe('req-fixed-123');
   });
 
   it('returns anonymous auth context without bearer token', async () => {
     const res = await app.request('/auth/me', undefined, createEnv());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
+    const payload = (await res.json()) as ApiEnvelope<{
+      is_authenticated: boolean;
+      subject: string | null;
+      email: string | null;
+      roles: string[];
+    }>;
+    expect(payload.error).toBeNull();
+    expect(payload.data).toEqual({
       is_authenticated: false,
       subject: null,
       email: null,
@@ -54,6 +96,12 @@ describe('Cloudflare Worker auth middleware', () => {
   it('blocks protected user route when auth is required and no token is present', async () => {
     const res = await app.request('/v1/protected/user', undefined, createEnv());
     expect(res.status).toBe(401);
+    const payload = (await res.json()) as ApiEnvelope<null>;
+    expect(payload.data).toBeNull();
+    expect(payload.error).toEqual({
+      code: 'unauthorized',
+      message: 'Missing bearer token'
+    });
   });
 
   it('allows authenticated user route with valid token', async () => {
@@ -68,7 +116,9 @@ describe('Cloudflare Worker auth middleware', () => {
       createEnv()
     );
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, role: 'user' });
+    const payload = (await res.json()) as ApiEnvelope<{ ok: boolean; role: string }>;
+    expect(payload.error).toBeNull();
+    expect(payload.data).toEqual({ ok: true, role: 'user' });
   });
 
   it('blocks admin route for non-admin role', async () => {
@@ -83,6 +133,12 @@ describe('Cloudflare Worker auth middleware', () => {
       createEnv()
     );
     expect(res.status).toBe(403);
+    const payload = (await res.json()) as ApiEnvelope<null>;
+    expect(payload.data).toBeNull();
+    expect(payload.error).toEqual({
+      code: 'forbidden',
+      message: 'Admin role required'
+    });
   });
 
   it('allows admin route for admin role', async () => {
@@ -97,6 +153,8 @@ describe('Cloudflare Worker auth middleware', () => {
       createEnv()
     );
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, role: 'admin' });
+    const payload = (await res.json()) as ApiEnvelope<{ ok: boolean; role: string }>;
+    expect(payload.error).toBeNull();
+    expect(payload.data).toEqual({ ok: true, role: 'admin' });
   });
 });

@@ -1,15 +1,23 @@
 import { Hono } from 'hono';
 import { optionalAuth, requireAdminAuth, requireUserAuth } from './auth';
+import { requestContextMiddleware, success } from './http';
 import domainRoutes from './routes/domain';
 import type { AppEnv } from './types';
 
 export const app = new Hono<AppEnv>();
 
-app.get('/health', (c) => c.json({ status: 'ok', runtime: 'cloudflare-worker' }));
+app.use('*', requestContextMiddleware);
+
+app.get('/health', (c) =>
+  success(c, {
+    status: 'ok',
+    runtime: 'cloudflare-worker'
+  })
+);
 
 app.get('/auth/me', optionalAuth, (c) => {
   const user = c.get('authUser');
-  return c.json({
+  return success(c, {
     is_authenticated: user.isAuthenticated,
     subject: user.subject,
     email: user.email,
@@ -18,14 +26,14 @@ app.get('/auth/me', optionalAuth, (c) => {
 });
 
 app.get('/v1/protected/user', requireUserAuth, (c) =>
-  c.json({
+  success(c, {
     ok: true,
     role: 'user'
   })
 );
 
 app.get('/v1/protected/admin', requireAdminAuth, (c) =>
-  c.json({
+  success(c, {
     ok: true,
     role: 'admin'
   })

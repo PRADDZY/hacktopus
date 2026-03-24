@@ -23,10 +23,12 @@ export type AppBindings = {
   MODAL_EXTRACTION_ENDPOINT?: string;
   MODAL_EXTRACTION_TOKEN?: string;
   EXTRACTION_CALLBACK_SECRET?: string;
+  IDEMPOTENCY_TTL_SECONDS?: string;
 };
 
 export type AppVariables = {
   authUser: AuthUser;
+  requestId: string;
 };
 
 export type AppEnv = {

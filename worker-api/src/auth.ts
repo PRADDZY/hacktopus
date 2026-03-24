@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import type { Context, MiddlewareHandler } from 'hono';
+import { failure } from './http';
 import type { AppEnv, AuthUser } from './types';
 
 type AuthSettings = {
@@ -57,26 +58,17 @@ const getAuthSettings = (c: Context<AppEnv>): AuthSettings => {
   };
 };
 
-const unauthorized = (message: string): Response =>
-  new Response(JSON.stringify({ error: { code: 'unauthorized', message } }), {
-    status: 401,
-    headers: {
-      'Content-Type': 'application/json',
-      'WWW-Authenticate': 'Bearer'
-    }
-  });
+const unauthorized = (c: Context<AppEnv>, message: string): Response => {
+  const response = failure(c, { code: 'unauthorized', message }, 401);
+  response.headers.set('WWW-Authenticate', 'Bearer');
+  return response;
+};
 
-const forbidden = (message: string): Response =>
-  new Response(JSON.stringify({ error: { code: 'forbidden', message } }), {
-    status: 403,
-    headers: { 'Content-Type': 'application/json' }
-  });
+const forbidden = (c: Context<AppEnv>, message: string): Response =>
+  failure(c, { code: 'forbidden', message }, 403);
 
-const serverError = (message: string): Response =>
-  new Response(JSON.stringify({ error: { code: 'config_error', message } }), {
-    status: 500,
-    headers: { 'Content-Type': 'application/json' }
-  });
+const serverError = (c: Context<AppEnv>, message: string): Response =>
+  failure(c, { code: 'config_error', message }, 500);
 
 const anonymousUser = (): AuthUser => ({
   isAuthenticated: false,
@@ -152,14 +144,14 @@ const resolveUserFromAuthHeader = async (
 
   const [scheme, token] = authHeader.split(' ');
   if (scheme?.toLowerCase() !== 'bearer' || !token) {
-    return unauthorized('Invalid authorization header');
+    return unauthorized(c, 'Invalid authorization header');
   }
 
   try {
     const payload = await decodeToken(token, settings);
     const subject = typeof payload.sub === 'string' ? payload.sub.trim() : '';
     if (!subject) {
-      return unauthorized('Access token missing subject');
+      return unauthorized(c, 'Access token missing subject');
     }
 
     const email = typeof payload.email === 'string' && payload.email.trim() ? payload.email.trim() : null;
@@ -171,7 +163,7 @@ const resolveUserFromAuthHeader = async (
       claims: payload as Record<string, unknown>
     };
   } catch {
-    return unauthorized('Invalid access token');
+    return unauthorized(c, 'Invalid access token');
   }
 };
 
@@ -193,7 +185,7 @@ export const requireUserAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const settings = getAuthSettings(c);
 
   if (settings.authRequired && !hasConfig(settings)) {
-    return serverError('Auth is required but AUTH_ISSUER_BASE_URL or AUTH_AUDIENCE is missing');
+    return serverError(c, 'Auth is required but AUTH_ISSUER_BASE_URL or AUTH_AUDIENCE is missing');
   }
 
   const resolved = await resolveUserFromAuthHeader(c, settings);
@@ -203,7 +195,7 @@ export const requireUserAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
 
   if (!resolved) {
     if (settings.authRequired) {
-      return unauthorized('Missing bearer token');
+      return unauthorized(c, 'Missing bearer token');
     }
     c.set('authUser', anonymousUser());
     return await next();
@@ -229,7 +221,7 @@ export const requireAdminAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   const isAdmin = user.roles.some((role) => normalizedAdminRoles.includes(role.toLowerCase()));
 
   if (!isAdmin) {
-    return forbidden('Admin role required');
+    return forbidden(c, 'Admin role required');
   }
 
   return await next();

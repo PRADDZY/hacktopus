@@ -1,10 +1,23 @@
 import { Context, Hono } from 'hono';
 import { requireAdminAuth, requireUserAuth } from '../auth';
 import { failure, success, toApiStatus } from '../http';
-import { SupabaseError, SupabaseRestClient } from '../supabase';
+import {
+  beginIdempotency,
+  createIdempotencyHash,
+  finalizeIdempotency,
+  readIdempotencyKey,
+  type ApiErrorPayload
+} from '../idempotency';
+import {
+  SupabaseError,
+  SupabaseRestClient,
+  type QueryFilters,
+  type SupabaseQueryParams
+} from '../supabase';
 import type { AppEnv } from '../types';
 
 type Decision = 'Approve' | 'Decline';
+type DecisionSource = 'auto' | 'manual_override';
 
 type DocumentRecord = {
   id: string;
@@ -32,7 +45,7 @@ type AssessmentRecord = {
   risk_probability: number;
   auto_decision: Decision;
   final_decision: Decision;
-  decision_source: 'auto' | 'manual_override';
+  decision_source: DecisionSource;
   reviewed_by?: string | null;
   override_reason?: string | null;
 };
@@ -130,6 +143,45 @@ const getModalEndpoint = (env: AppEnv['Bindings']): string | null =>
 
 const getCallbackSecret = (env: AppEnv['Bindings']): string | null =>
   asNonEmpty(env.EXTRACTION_CALLBACK_SECRET);
+
+const normalizeDecisionSource = (value: unknown): DecisionSource | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'auto') {
+    return 'auto';
+  }
+  if (normalized === 'manual_override') {
+    return 'manual_override';
+  }
+  return null;
+};
+
+const sanitizeSearchTerm = (value: string | undefined): string | null => {
+  const raw = asNonEmpty(value);
+  if (!raw) {
+    return null;
+  }
+
+  const sanitized = raw.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+  return sanitized || null;
+};
+
+const replayIdempotentResult = (
+  c: Context<AppEnv>,
+  replay: {
+    status: number;
+    data: unknown;
+    error: ApiErrorPayload | null;
+  }
+): Response => {
+  if (replay.error) {
+    return failure(c, replay.error, toApiStatus(replay.status, 400));
+  }
+  return success(c, replay.data, toApiStatus(replay.status, 200));
+};
 
 const computeRiskProbability = (payload: Record<string, unknown>): number => {
   const read = (key: string, fallback: number): number => {
@@ -246,6 +298,11 @@ routes.post('/documents', requireUserAuth, async (c) => {
     return failure(c, { code: 'unauthorized', message: 'Authentication required' }, 401);
   }
 
+  const idempotencyKey = readIdempotencyKey(c.req.header('Idempotency-Key'));
+  if (!idempotencyKey) {
+    return failure(c, { code: 'missing_idempotency_key', message: 'Idempotency-Key header is required' }, 400);
+  }
+
   let body: Record<string, unknown>;
   try {
     body = (await c.req.json()) as Record<string, unknown>;
@@ -258,8 +315,51 @@ routes.post('/documents', requireUserAuth, async (c) => {
     return failure(c, { code: 'invalid_request', message: 'storage_key is required' }, 400);
   }
 
+  const routeKey = 'post:/v1/documents';
+  const requestHash = await createIdempotencyHash({
+    routeKey,
+    ownerSub: user.subject,
+    payload: body
+  });
+
+  let idempotencyRecordId: string | null = null;
+
   try {
     const supabase = new SupabaseRestClient(c);
+    const idempotency = await beginIdempotency({
+      supabase,
+      env: c.env,
+      ownerSub: user.subject,
+      routeKey,
+      idempotencyKey,
+      requestHash
+    });
+
+    if (idempotency.kind === 'conflict') {
+      return failure(
+        c,
+        {
+          code: 'idempotency_conflict',
+          message: 'Idempotency-Key already used with a different request payload'
+        },
+        409
+      );
+    }
+    if (idempotency.kind === 'in_progress') {
+      return failure(
+        c,
+        {
+          code: 'idempotency_in_progress',
+          message: 'A request with this Idempotency-Key is already being processed'
+        },
+        409
+      );
+    }
+    if (idempotency.kind === 'replay') {
+      return replayIdempotentResult(c, idempotency);
+    }
+    idempotencyRecordId = idempotency.recordId;
+
     const createdDocument = await supabase.insertOne<DocumentRecord>('documents', {
       owner_sub: user.subject,
       storage_key: storageKey,
@@ -294,20 +394,46 @@ routes.post('/documents', requireUserAuth, async (c) => {
       extractionJob
     });
 
+    const responseData = {
+      ...createdDocument,
+      extraction_job_id: extractionJob.id,
+      extraction_job_status: dispatchResult.extractionJobStatus,
+      external_job_id: dispatchResult.externalJobId,
+      ...(patchedDocument ?? {})
+    };
+
+    if (idempotencyRecordId) {
+      await finalizeIdempotency({
+        supabase,
+        env: c.env,
+        recordId: idempotencyRecordId,
+        status: 201,
+        data: responseData,
+        error: null
+      });
+    }
+
     return success(
       c,
-      {
-        ...createdDocument,
-        extraction_job_id: extractionJob.id,
-        extraction_job_status: dispatchResult.extractionJobStatus,
-        external_job_id: dispatchResult.externalJobId,
-        ...(patchedDocument ?? {})
-      },
+      responseData,
       201
     );
   } catch (error) {
     if (error instanceof SupabaseError) {
-      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+      const status = toApiStatus(error.status);
+      const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
+      if (idempotencyRecordId && status < 500) {
+        const supabase = new SupabaseRestClient(c);
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, status);
     }
     return failure(c, { code: 'internal_error', message: 'Failed to create document' }, 500);
   }
@@ -507,6 +633,11 @@ routes.post('/assessments', requireUserAuth, async (c) => {
     return failure(c, { code: 'unauthorized', message: 'Authentication required' }, 401);
   }
 
+  const idempotencyKey = readIdempotencyKey(c.req.header('Idempotency-Key'));
+  if (!idempotencyKey) {
+    return failure(c, { code: 'missing_idempotency_key', message: 'Idempotency-Key header is required' }, 400);
+  }
+
   let body: Record<string, unknown>;
   try {
     body = (await c.req.json()) as Record<string, unknown>;
@@ -519,14 +650,82 @@ routes.post('/assessments', requireUserAuth, async (c) => {
     return failure(c, { code: 'invalid_request', message: 'document_id is required' }, 400);
   }
 
+  const routeKey = 'post:/v1/assessments';
+  const requestHash = await createIdempotencyHash({
+    routeKey,
+    ownerSub: user.subject,
+    payload: body
+  });
+
+  let idempotencyRecordId: string | null = null;
+
   try {
     const supabase = new SupabaseRestClient(c);
+    const idempotency = await beginIdempotency({
+      supabase,
+      env: c.env,
+      ownerSub: user.subject,
+      routeKey,
+      idempotencyKey,
+      requestHash
+    });
+
+    if (idempotency.kind === 'conflict') {
+      return failure(
+        c,
+        {
+          code: 'idempotency_conflict',
+          message: 'Idempotency-Key already used with a different request payload'
+        },
+        409
+      );
+    }
+    if (idempotency.kind === 'in_progress') {
+      return failure(
+        c,
+        {
+          code: 'idempotency_in_progress',
+          message: 'A request with this Idempotency-Key is already being processed'
+        },
+        409
+      );
+    }
+    if (idempotency.kind === 'replay') {
+      return replayIdempotentResult(c, idempotency);
+    }
+    idempotencyRecordId = idempotency.recordId;
+
     const document = await supabase.selectOne<DocumentRecord>('documents', { id: documentId });
     if (!document) {
-      return failure(c, { code: 'not_found', message: 'Document not found' }, 404);
+      const responseError: ApiErrorPayload = { code: 'not_found', message: 'Document not found' };
+      if (idempotencyRecordId) {
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status: 404,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, 404);
     }
     if (document.owner_sub !== user.subject) {
-      return failure(c, { code: 'forbidden', message: 'You cannot assess this document' }, 403);
+      const responseError: ApiErrorPayload = {
+        code: 'forbidden',
+        message: 'You cannot assess this document'
+      };
+      if (idempotencyRecordId) {
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status: 403,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, 403);
     }
 
     let extractedFeature = await supabase.selectOne<ExtractedFeatureRecord>('extracted_features', {
@@ -547,21 +746,28 @@ routes.post('/assessments', requireUserAuth, async (c) => {
     }
 
     if (!extractedFeature) {
-      return failure(
-        c,
-        {
-          code: 'invalid_request',
-          message: 'No extracted feature payload found. Provide features or run extraction first.'
-        },
-        400
-      );
+      const responseError: ApiErrorPayload = {
+        code: 'invalid_request',
+        message: 'No extracted feature payload found. Provide features or run extraction first.'
+      };
+      if (idempotencyRecordId) {
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status: 400,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, 400);
     }
 
     const threshold = getThreshold(c.env);
     const riskProbability = computeRiskProbability(extractedFeature.payload);
     const autoDecision = toDecision(riskProbability, threshold);
 
-    const assessment = await supabase.insertOne<AssessmentRecord>('assessments', {
+    const responseData = await supabase.insertOne<AssessmentRecord>('assessments', {
       owner_sub: user.subject,
       document_id: documentId,
       extracted_feature_id: extractedFeature.id,
@@ -573,10 +779,34 @@ routes.post('/assessments', requireUserAuth, async (c) => {
       model_version: getModelVersion(c.env)
     });
 
-    return success(c, assessment, 201);
+    if (idempotencyRecordId) {
+      await finalizeIdempotency({
+        supabase,
+        env: c.env,
+        recordId: idempotencyRecordId,
+        status: 201,
+        data: responseData,
+        error: null
+      });
+    }
+
+    return success(c, responseData, 201);
   } catch (error) {
     if (error instanceof SupabaseError) {
-      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+      const status = toApiStatus(error.status);
+      const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
+      if (idempotencyRecordId && status < 500) {
+        const supabase = new SupabaseRestClient(c);
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, status);
     }
     return failure(c, { code: 'internal_error', message: 'Failed to create assessment' }, 500);
   }
@@ -594,7 +824,7 @@ routes.get('/assessments/me', requireUserAuth, async (c) => {
 
   try {
     const supabase = new SupabaseRestClient(c);
-    const items = await supabase.selectMany<AssessmentRecord>('assessments', {
+    const { items, total } = await supabase.selectManyWithCount<AssessmentRecord>('assessments', {
       filters: { owner_sub: user.subject },
       order: 'created_at.desc',
       limit,
@@ -606,8 +836,8 @@ routes.get('/assessments/me', requireUserAuth, async (c) => {
       {
         page,
         limit,
-        total: items.length,
-        total_pages: items.length === 0 ? 1 : Math.ceil(items.length / limit),
+        total,
+        total_pages: total === 0 ? 1 : Math.ceil(total / limit),
         items
       },
       200
@@ -625,14 +855,39 @@ routes.get('/admin/assessments', requireAdminAuth, async (c) => {
   const limit = parseLimit(c.req.query('limit'));
   const offset = (page - 1) * limit;
   const status = normalizeDecision(c.req.query('status'));
+  const ownerSub = asNonEmpty(c.req.query('owner_sub'));
+  const reviewedBy = asNonEmpty(c.req.query('reviewed_by'));
+  const decisionSource = normalizeDecisionSource(c.req.query('decision_source'));
+  const q = sanitizeSearchTerm(c.req.query('q'));
+
+  const filters: QueryFilters = {};
+  if (status) {
+    filters.final_decision = status;
+  }
+  if (ownerSub) {
+    filters.owner_sub = ownerSub;
+  }
+  if (reviewedBy) {
+    filters.reviewed_by = { op: 'ilike', value: `*${reviewedBy}*` };
+  }
+  if (decisionSource) {
+    filters.decision_source = decisionSource;
+  }
+
+  const query: SupabaseQueryParams = {};
+  if (q) {
+    const searchPattern = `*${q}*`;
+    query.or = `(owner_sub.ilike.${searchPattern},reviewed_by.ilike.${searchPattern},override_reason.ilike.${searchPattern})`;
+  }
 
   try {
     const supabase = new SupabaseRestClient(c);
-    const items = await supabase.selectMany<AssessmentRecord>('assessments', {
-      filters: status ? { final_decision: status } : {},
+    const { items, total } = await supabase.selectManyWithCount<AssessmentRecord>('assessments', {
+      filters,
       order: 'created_at.desc',
       limit,
-      offset
+      offset,
+      query
     });
 
     return success(
@@ -640,8 +895,8 @@ routes.get('/admin/assessments', requireAdminAuth, async (c) => {
       {
         page,
         limit,
-        total: items.length,
-        total_pages: items.length === 0 ? 1 : Math.ceil(items.length / limit),
+        total,
+        total_pages: total === 0 ? 1 : Math.ceil(total / limit),
         items
       },
       200
