@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "node scripts/demo-smoke.mjs"
   },
   "dependencies": {
     "hono": "^4.10.0",

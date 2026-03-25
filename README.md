@@ -8,18 +8,17 @@ Frontend (Next.js)
 - Unified app with shop and risk dashboard routes.
 
 Backend (FastAPI)
-- Orchestrates model inference, applies threshold, logs decisions to DB.
+- Legacy compatibility service retained for fallback/testing.
 
 Worker API (Cloudflare, Wave 1 foundation)
-- TypeScript runtime scaffold with Auth0 JWT verification and role guards.
-- Wave 4 contract hardening: unified response envelope, request-id tracing, idempotent mutation routes.
+- Primary runtime API for checkout/admin domain, auth guardrails, and assistant endpoint.
 
 ML Service (FastAPI)
 - Serves the risk scoring contract (`risk-v2.0.0`) with explainability reasons.
 - Supports CatBoost+FT ensemble artifacts and falls back to local baseline model artifacts.
 
 Database
-- PostgreSQL in production, SQLite by default for local dev.
+- Supabase Postgres for application, extraction, and audit domain data.
 
 Flow
 
@@ -35,7 +34,7 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 9000 --reload
 ```
 
-### 2) Backend
+### 2) Backend (optional legacy mode)
 
 ```bash
 cd backend
@@ -78,7 +77,7 @@ NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
 
 Auth provider precedence in frontend: Supabase first, Auth0 fallback.
 
-### 4) Worker API (optional in transition phase)
+### 4) Worker API (primary runtime)
 
 ```bash
 cd worker-api
@@ -102,7 +101,7 @@ Worker API (primary app domain)
 - `POST /v1/assessments`
 - `GET /health`
 
-Backend (transition / compatibility)
+Backend (legacy / compatibility)
 - `POST /predict`
 - `GET /health`
 
@@ -110,6 +109,16 @@ ML Service
 - `POST /predict`
 - `GET /health`
 - `GET /metadata`
+
+## Demo Operations
+
+- Demo runbook: [docs/demo/demo-runbook.md](docs/demo/demo-runbook.md)
+- Worker smoke check:
+
+```bash
+cd worker-api
+npm run smoke
+```
 
 ## Project Structure
 

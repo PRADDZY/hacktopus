@@ -129,3 +129,19 @@ npm test
 cd worker-api
 npm run deploy
 ```
+
+## Demo Smoke
+
+```bash
+cd worker-api
+npm run smoke
+```
+
+With auth/admin checks:
+
+```bash
+SMOKE_BASE_URL=https://<worker-url> \
+SMOKE_BEARER_TOKEN=<jwt> \
+SMOKE_CHECK_ADMIN=true \
+npm run smoke
+```
