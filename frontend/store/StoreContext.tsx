@@ -4,10 +4,15 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { AppState, Address, Notification, Order, Product } from '@/types';
 import {
   beginAuthFlow,
+  getAuthProvider,
   getAccessToken as getProviderAccessToken,
   getAuthProfile,
   isAuthConfigured,
+  loginWithEmailPassword,
+  loginWithPhoneOtp,
   logoutFromAuthProvider,
+  signupWithEmailPassword,
+  type AuthProvider,
   type AuthRole,
 } from '@/lib/authClient';
 import { safeJsonParse } from '@/lib/storage';
@@ -20,6 +25,7 @@ type AuthActionOptions = {
 interface StoreContextType extends AppState {
   isAuthReady: boolean;
   isAuthConfigured: boolean;
+  authProvider: AuthProvider;
   login: (email: string, password: string, options?: AuthActionOptions) => Promise<boolean>;
   loginWithPhone: (phone: string, otp: string, options?: AuthActionOptions) => Promise<boolean>;
   signup: (
@@ -111,15 +117,27 @@ const resolveRoles = (rawUser: Record<string, unknown>): string[] => {
 };
 
 const mapProviderUserToAppUser = (providerUser: Record<string, unknown>) => {
-  const subject = readString(providerUser.sub) ?? readString(providerUser.user_id) ?? 'user';
+  const userMetadata =
+    typeof providerUser.user_metadata === 'object' && providerUser.user_metadata !== null
+      ? (providerUser.user_metadata as Record<string, unknown>)
+      : null;
+  const subject =
+    readString(providerUser.sub) ??
+    readString(providerUser.user_id) ??
+    readString(providerUser.id) ??
+    'user';
   const email = readString(providerUser.email) ?? `${subject}@unknown.local`;
-  const phone = readString(providerUser.phone_number) ?? '';
+  const phone =
+    readString(providerUser.phone_number) ??
+    (userMetadata ? readString(userMetadata.phone) : null) ??
+    '';
   const roles = resolveRoles(providerUser);
 
   const fallbackName = email.includes('@') ? email.split('@')[0] : 'User';
   const name =
     readString(providerUser.name) ??
     readString(providerUser.nickname) ??
+    (userMetadata ? readString(userMetadata.name) : null) ??
     fallbackName;
 
   return {
@@ -131,10 +149,60 @@ const mapProviderUserToAppUser = (providerUser: Record<string, unknown>) => {
   };
 };
 
+const resolveApiBaseUrl = (): string =>
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') ??
+  '';
+
+const readServerRoles = async (token: string): Promise<string[] | null> => {
+  const apiBase = resolveApiBaseUrl();
+  if (!apiBase) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${apiBase}/auth/me`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | { roles?: unknown; data?: { roles?: unknown } | null }
+      | null;
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const directRoles = 'roles' in payload ? toStringArray(payload.roles) : [];
+    if (directRoles.length > 0) {
+      return directRoles;
+    }
+
+    const nested = payload.data;
+    if (nested && typeof nested === 'object') {
+      const nestedRoles = toStringArray((nested as { roles?: unknown }).roles);
+      if (nestedRoles.length > 0) {
+        return nestedRoles;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(initialState);
   const [isStateReady, setIsStateReady] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const authProvider = getAuthProvider();
   const authConfigured = isAuthConfigured();
 
   useEffect(() => {
@@ -162,10 +230,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const profile = await getAuthProfile();
-      const user =
+      const mappedUser =
         profile.isAuthenticated && profile.user
           ? mapProviderUserToAppUser(profile.user as Record<string, unknown>)
           : null;
+      let user = mappedUser;
+
+      if (mappedUser) {
+        const token = await getProviderAccessToken();
+        if (token) {
+          const serverRoles = await readServerRoles(token);
+          if (serverRoles && serverRoles.length > 0) {
+            user = {
+              ...mappedUser,
+              roles: serverRoles,
+            };
+          }
+        }
+      }
 
       setState((prev) => ({
         ...prev,
@@ -217,6 +299,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     options: AuthActionOptions = {}
   ): Promise<boolean> => {
     if (authConfigured) {
+      if (authProvider === 'supabase') {
+        if (!email.trim() || !password.trim()) {
+          return false;
+        }
+        await loginWithEmailPassword({
+          email: email.trim(),
+          password: password.trim(),
+        });
+        await refreshAuth();
+        return true;
+      }
+
       await beginAuthFlow({
         mode: 'login',
         role: options.role ?? 'user',
@@ -251,6 +345,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     options: AuthActionOptions = {}
   ): Promise<boolean> => {
     if (authConfigured) {
+      if (authProvider === 'supabase') {
+        await loginWithPhoneOtp(phone, otp);
+        await refreshAuth();
+        return true;
+      }
+
       await beginAuthFlow({
         mode: 'login',
         role: options.role ?? 'user',
@@ -287,6 +387,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     options: AuthActionOptions = {}
   ): Promise<boolean> => {
     if (authConfigured) {
+      if (authProvider === 'supabase') {
+        await signupWithEmailPassword({
+          name,
+          email: email.trim(),
+          password: password.trim(),
+          phone: phone.trim(),
+          role: options.role ?? 'user',
+        });
+        await refreshAuth();
+        return true;
+      }
+
       await beginAuthFlow({
         mode: 'signup',
         role: options.role ?? 'user',
@@ -476,6 +588,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         ...state,
         isAuthReady,
         isAuthConfigured: authConfigured,
+        authProvider,
         login,
         loginWithPhone,
         signup,
@@ -510,4 +623,3 @@ export function useStore() {
   }
   return context;
 }
-

@@ -1,12 +1,12 @@
 AUTH_REQUIRED=true
-AUTH_ISSUER_BASE_URL=https://<your-auth0-domain>/
-AUTH_AUDIENCE=<your-auth0-api-audience>
-AUTH_JWKS_URL=https://<your-auth0-domain>/.well-known/jwks.json
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_AUTH_ISSUER=https://<project-ref>.supabase.co/auth/v1
+SUPABASE_JWT_SECRET=<supabase-jwt-secret>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+AUTH_AUDIENCE=authenticated
 AUTH_ROLE_CLAIM=https://fairlens.ai/roles
 AUTH_ADMIN_ROLES=admin
-AUTH_JWT_ALGORITHMS=RS256
-SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+AUTH_JWT_ALGORITHMS=HS256
 SUPABASE_REST_SCHEMA=public
 RISK_APPROVAL_THRESHOLD=0.55
 MODEL_VERSION=worker-baseline-v1
@@ -19,5 +19,8 @@ MODAL_EXTRACTION_ENDPOINT=https://<modal-endpoint>/extract
 # MODAL_EXTRACTION_TOKEN=<optional-modal-bearer-token>
 EXTRACTION_CALLBACK_SECRET=<shared-callback-secret>
 
-# Local test convenience only. Keep unset in real environments.
+# Optional Auth0 fallback mode (leave unset when using Supabase auth):
+# AUTH_ISSUER_BASE_URL=https://<your-auth0-domain>/
+# AUTH_AUDIENCE=<your-auth0-api-audience>
+# AUTH_JWKS_URL=https://<your-auth0-domain>/.well-known/jwks.json
 # AUTH_SHARED_SECRET=<local-dev-only-secret>

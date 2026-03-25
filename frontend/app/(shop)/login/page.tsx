@@ -8,30 +8,43 @@ import { useStore } from '@/store/StoreContext';
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthConfigured, login, loginWithPhone } = useStore();
+  const { authProvider, isAuthConfigured, login, loginWithPhone } = useStore();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const nextPath = searchParams.get('next') ?? '/';
 
   const handleEmailLogin = async () => {
     setIsSubmitting(true);
-    const success = await login(email, password, { role: 'user', returnTo: nextPath });
-    if (success && !isAuthConfigured) {
-      router.push(nextPath);
+    setError(null);
+    try {
+      const success = await login(email, password, { role: 'user', returnTo: nextPath });
+      if (success && (!isAuthConfigured || authProvider === 'supabase')) {
+        router.push(nextPath);
+      }
+    } catch (loginError) {
+      const message = loginError instanceof Error ? loginError.message : 'Unable to sign in';
+      setError(message);
     }
     setIsSubmitting(false);
   };
 
   const handlePhoneLogin = async () => {
     setIsSubmitting(true);
-    const success = await loginWithPhone(phone, otp, { role: 'user', returnTo: nextPath });
-    if (success && !isAuthConfigured) {
-      router.push(nextPath);
+    setError(null);
+    try {
+      const success = await loginWithPhone(phone, otp, { role: 'user', returnTo: nextPath });
+      if (success && (!isAuthConfigured || authProvider === 'supabase')) {
+        router.push(nextPath);
+      }
+    } catch (loginError) {
+      const message = loginError instanceof Error ? loginError.message : 'Unable to verify phone OTP';
+      setError(message);
     }
     setIsSubmitting(false);
   };
@@ -46,6 +59,7 @@ export default function LoginPage() {
             ? 'Continue using secure sign-in.'
             : 'Access your FairLens checkout profile.'}
         </p>
+        {error ? <p className="text-sm text-rose-700">{error}</p> : null}
         <div className="space-y-3">
           <input
             className="input-field"
@@ -92,4 +106,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

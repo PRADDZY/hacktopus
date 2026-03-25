@@ -8,24 +8,31 @@ import { useStore } from '@/store/StoreContext';
 export default function SignupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthConfigured, signup } = useStore();
+  const { authProvider, isAuthConfigured, signup } = useStore();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const nextPath = searchParams.get('next') ?? '/';
 
   const handleSignup = async () => {
     setIsSubmitting(true);
-    const success = await signup(name, email, password, phone, {
-      role: 'user',
-      returnTo: nextPath,
-    });
-    if (success && !isAuthConfigured) {
-      router.push(nextPath);
+    setError(null);
+    try {
+      const success = await signup(name, email, password, phone, {
+        role: 'user',
+        returnTo: nextPath,
+      });
+      if (success && (!isAuthConfigured || authProvider === 'supabase')) {
+        router.push(nextPath);
+      }
+    } catch (signupError) {
+      const message = signupError instanceof Error ? signupError.message : 'Unable to create account';
+      setError(message);
     }
     setIsSubmitting(false);
   };
@@ -40,6 +47,7 @@ export default function SignupPage() {
             ? 'Sign-up continues in secure hosted authentication.'
             : 'Create a profile to track EMI approvals and orders.'}
         </p>
+        {error ? <p className="text-sm text-rose-700">{error}</p> : null}
         <div className="grid md:grid-cols-2 gap-3">
           <input
             className="input-field"
@@ -74,4 +82,3 @@ export default function SignupPage() {
     </div>
   );
 }
-

@@ -1,11 +1,14 @@
 import { SignJWT } from 'jose';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../src/app';
 import type { AppEnv } from '../src/types';
 
 const ISSUER = 'https://auth.example.com/';
 const AUDIENCE = 'fairlens-api';
 const SHARED_SECRET = 'unit-test-secret';
+const SUPABASE_URL = 'https://supabase.example.co';
+const SUPABASE_ISSUER = `${SUPABASE_URL}/auth/v1`;
+const SUPABASE_JWT_SECRET = 'supabase-jwt-secret';
 
 const createEnv = (overrides: Partial<AppEnv['Bindings']> = {}): AppEnv['Bindings'] => ({
   AUTH_REQUIRED: 'true',
@@ -33,6 +36,23 @@ const signToken = async (roles: string[] = []): Promise<string> => {
     .sign(new TextEncoder().encode(SHARED_SECRET));
 };
 
+const signSupabaseToken = async (
+  subject = '22ca95e5-24a6-4f34-a4f4-6df65d0867d6'
+): Promise<string> => {
+  const now = Math.floor(Date.now() / 1000);
+  return await new SignJWT({
+    email: 'supabase-user@example.com',
+    role: 'authenticated'
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(SUPABASE_ISSUER)
+    .setAudience('authenticated')
+    .setSubject(subject)
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(new TextEncoder().encode(SUPABASE_JWT_SECRET));
+};
+
 type ApiEnvelope<T> = {
   data: T | null;
   error: {
@@ -45,6 +65,10 @@ type ApiEnvelope<T> = {
     timestamp: string;
   };
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('Cloudflare Worker auth middleware', () => {
   it('returns health status without auth', async () => {
@@ -152,6 +176,44 @@ describe('Cloudflare Worker auth middleware', () => {
       },
       createEnv()
     );
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as ApiEnvelope<{ ok: boolean; role: string }>;
+    expect(payload.error).toBeNull();
+    expect(payload.data).toEqual({ ok: true, role: 'admin' });
+  });
+
+  it('allows supabase token and resolves admin role from user_roles table', async () => {
+    const token = await signSupabaseToken();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toContain('/rest/v1/user_roles');
+      expect(url.searchParams.get('user_id')).toBe('eq.22ca95e5-24a6-4f34-a4f4-6df65d0867d6');
+      return new Response(JSON.stringify([{ role: 'admin' }]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await app.request(
+      '/v1/protected/admin',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
+      createEnv({
+        AUTH_ISSUER_BASE_URL: undefined,
+        AUTH_AUDIENCE: undefined,
+        AUTH_SHARED_SECRET: undefined,
+        AUTH_JWKS_URL: undefined,
+        AUTH_JWT_ALGORITHMS: undefined,
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        SUPABASE_JWT_SECRET
+      })
+    );
+
     expect(res.status).toBe(200);
     const payload = (await res.json()) as ApiEnvelope<{ ok: boolean; role: string }>;
     expect(payload.error).toBeNull();

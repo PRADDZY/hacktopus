@@ -56,21 +56,30 @@ All endpoints return a single envelope:
 - Reusing the same key with a different payload returns `409 idempotency_conflict`.
 - Duplicate in-flight requests return `409 idempotency_in_progress`.
 
-## Auth0 JWT Verification
+## JWT Verification (Supabase-First)
 
-The worker verifies bearer JWTs using:
+The worker verifies bearer JWTs using Supabase config when present:
 
-- Issuer: `AUTH_ISSUER_BASE_URL`
-- Audience: `AUTH_AUDIENCE`
-- Algorithms: `AUTH_JWT_ALGORITHMS` (default `RS256`)
+- Issuer: `SUPABASE_AUTH_ISSUER` (or `${SUPABASE_URL}/auth/v1`)
+- Audience: `AUTH_AUDIENCE` (default `authenticated`)
+- JWT secret: `SUPABASE_JWT_SECRET`
 - Role claim: `AUTH_ROLE_CLAIM` (default `https://fairlens.ai/roles`)
 - Admin roles: `AUTH_ADMIN_ROLES` (default `admin`)
 
-Optional local/test fallback: `AUTH_SHARED_SECRET` for HS256 token verification.
+For Supabase mode, admin role is resolved from `public.user_roles` using `SUPABASE_SERVICE_ROLE_KEY`.
+
+Auth0/JWKS mode remains available as fallback via:
+
+- `AUTH_ISSUER_BASE_URL`
+- `AUTH_AUDIENCE`
+- `AUTH_JWKS_URL` (or inferred from issuer)
+- Optional `AUTH_SHARED_SECRET` for local HS256 test tokens.
 
 ## Supabase Runtime Variables
 
 - `SUPABASE_URL`
+- `SUPABASE_AUTH_ISSUER` (optional, defaults to `${SUPABASE_URL}/auth/v1`)
+- `SUPABASE_JWT_SECRET` (required for Supabase JWT verification mode)
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_REST_SCHEMA` (default `public`)
 - `RISK_APPROVAL_THRESHOLD` (default `0.55`)
