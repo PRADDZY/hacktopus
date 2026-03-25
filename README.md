@@ -23,7 +23,7 @@ Database
 
 Flow
 
-Shop checkout -> Backend -> ML Service -> Risk probability -> Approve/Decline -> Logged -> Dashboard
+Shop checkout -> Worker `/v1/documents` + `/v1/assessments` -> ML Service -> Risk probability -> Approve/Decline -> Logged -> Dashboard
 
 ## Run Locally
 

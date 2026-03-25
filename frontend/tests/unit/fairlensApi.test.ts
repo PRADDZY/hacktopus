@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import {
+  createAssessment,
   createApplication,
+  createStatementDocument,
+  fetchExtractionJob,
   fetchAdminApplication,
   fetchAdminApplications,
   fetchAuditLogs,
@@ -285,6 +288,98 @@ export const run = async () => {
       assert.equal(updated.decision_source, 'manual_override');
       assert.equal(updated.final_decision, 'Approve');
     });
+  }
+
+  {
+    const documentFixture = {
+      id: 'doc-1',
+      storage_key: 'uploads/a.csv',
+      extraction_job_id: 'job-1',
+      extraction_job_status: 'queued',
+    };
+
+    await withMockedFetch(
+      async () =>
+        jsonResponse({
+          data: documentFixture,
+          error: null,
+          meta: { requestId: 'req-doc', timestamp: '2026-03-26T00:00:00.000Z' },
+        }),
+      async () => {
+        const created = await createStatementDocument({
+          storage_key: 'uploads/a.csv',
+          file_name: 'a.csv',
+          mime_type: 'text/csv',
+          source: 'checkout',
+        });
+        assert.equal(created.id, 'doc-1');
+        assert.equal(created.extraction_job_id, 'job-1');
+      }
+    );
+  }
+
+  {
+    const extractionFixture = {
+      id: 'job-1',
+      document_id: 'doc-1',
+      status: 'completed',
+      document_status: 'ready',
+    };
+
+    await withMockedFetch(
+      async () =>
+        jsonResponse({
+          data: extractionFixture,
+          error: null,
+          meta: { requestId: 'req-job', timestamp: '2026-03-26T00:00:00.000Z' },
+        }),
+      async () => {
+        const job = await fetchExtractionJob('job-1');
+        assert.equal(job.status, 'completed');
+      }
+    );
+  }
+
+  {
+    const assessmentFixture = {
+      id: 'asm-1',
+      owner_sub: 'user-1',
+      document_id: 'doc-1',
+      risk_probability: 0.21,
+      auto_decision: 'Approve',
+      final_decision: 'Approve',
+      decision_source: 'auto',
+    };
+
+    await withMockedFetch(
+      async () =>
+        jsonResponse({
+          data: assessmentFixture,
+          error: null,
+          meta: { requestId: 'req-asm', timestamp: '2026-03-26T00:00:00.000Z' },
+        }),
+      async () => {
+        const assessment = await createAssessment({
+          document_id: 'doc-1',
+          statement: {
+            segment: 'gig_worker',
+            statement_window_days: 90,
+            purchase_amount: 25000,
+            tenure_weeks: 24,
+            transactions: [
+              {
+                booked_at: '2026-03-01T00:00:00.000Z',
+                amount: 12000,
+                balance: 21000,
+                direction: 'credit',
+              },
+            ],
+          },
+        });
+        assert.equal(assessment.id, 'asm-1');
+        assert.equal(assessment.final_decision, 'Approve');
+      }
+    );
   }
 
   {

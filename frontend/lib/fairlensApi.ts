@@ -6,10 +6,14 @@ import {
   BackendLogItem,
   BackendLogsResponse,
   BackendStats,
+  CreateAssessmentRequest,
   CreateApplicationRequest,
   EMIRequest,
   FairlensPredictRequest,
   FairlensPredictResponse,
+  WorkerAssessmentItem,
+  WorkerDocumentItem,
+  WorkerExtractionJobItem,
 } from '@/types';
 import { getAccessToken } from '@/lib/authClient';
 
@@ -219,6 +223,64 @@ export async function createApplication(
     throw new Error(await parseError(response));
   }
   return parseJsonResponse<BackendApplicationItem>(response, 'Create application');
+}
+
+export async function createStatementDocument(
+  payload: {
+    storage_key: string;
+    file_name?: string;
+    mime_type?: string;
+    source?: string;
+  },
+  idempotencyKey?: string
+): Promise<WorkerDocumentItem> {
+  const headers = await buildHeaders({
+    isMutation: true,
+    includeJson: true,
+    idempotencyKey,
+  });
+  const response = await fetch(`${apiBaseUrl}/v1/documents`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<WorkerDocumentItem>(response, 'Create statement document');
+}
+
+export async function fetchExtractionJob(extractionJobId: string): Promise<WorkerExtractionJobItem> {
+  const headers = await buildHeaders({ isMutation: false, includeJson: false });
+  const response = await fetch(`${apiBaseUrl}/v1/extraction-jobs/${extractionJobId}`, {
+    cache: 'no-store',
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<WorkerExtractionJobItem>(response, 'Extraction job');
+}
+
+export async function createAssessment(
+  payload: CreateAssessmentRequest,
+  idempotencyKey?: string
+): Promise<WorkerAssessmentItem> {
+  const headers = await buildHeaders({
+    isMutation: true,
+    includeJson: true,
+    idempotencyKey,
+  });
+  const response = await fetch(`${apiBaseUrl}/v1/assessments`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<WorkerAssessmentItem>(response, 'Create assessment');
 }
 
 export async function fetchMyApplications(page = 1, limit = 20): Promise<BackendApplicationsResponse> {

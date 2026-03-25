@@ -5,9 +5,10 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, Loader2, XCircle } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { createApplication } from '@/lib/fairlensApi';
+import { createAssessment, createStatementDocument, fetchExtractionJob } from '@/lib/fairlensApi';
 import { formatCurrency } from '@/lib/format';
 import { useStore } from '@/store/StoreContext';
+import type { StatementTransactionInput } from '@/types';
 
 interface EMIFormData {
   cardType: 'credit' | 'fairlens' | '';
@@ -17,7 +18,7 @@ interface EMIFormData {
 }
 
 interface RiskAssessmentResult {
-  applicationUuid: string;
+  assessmentId: string;
   decision: 'Approve' | 'Decline';
   riskProbability: number;
   decisionSource: 'auto' | 'manual_override';
@@ -29,6 +30,164 @@ const steps = [
   { number: 3, title: 'Payment' },
   { number: 4, title: 'Review' },
 ];
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const parseNumeric = (value: string): number | null => {
+  const normalized = value.replace(/[^\d.-]/g, '').trim();
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+};
+
+const parseCsvTransactions = async (file: File): Promise<StatementTransactionInput[]> => {
+  const raw = await file.text();
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) {
+    return [];
+  }
+
+  const headers = lines[0].split(',').map((header) => header.trim().toLowerCase());
+  const findIndex = (candidates: string[]): number =>
+    headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
+
+  const dateIndex = findIndex(['date', 'booked_at', 'txn_date']);
+  const amountIndex = findIndex(['amount', 'txn_amount', 'value']);
+  const balanceIndex = findIndex(['balance', 'closing_balance', 'running_balance']);
+  const directionIndex = findIndex(['direction', 'type', 'drcr', 'crdr']);
+  const debitIndex = findIndex(['debit', 'withdrawal']);
+  const creditIndex = findIndex(['credit', 'deposit']);
+  const descriptionIndex = findIndex(['description', 'narration', 'remark', 'details']);
+
+  const output: StatementTransactionInput[] = [];
+  let runningBalance = 0;
+
+  for (const line of lines.slice(1, 401)) {
+    const columns = line.split(',').map((column) => column.trim());
+    const bookedAtRaw = dateIndex >= 0 ? columns[dateIndex] : '';
+    const parsedDate = bookedAtRaw ? new Date(bookedAtRaw) : new Date();
+    const bookedAt = Number.isNaN(parsedDate.getTime()) ? new Date().toISOString() : parsedDate.toISOString();
+
+    let amount: number | null = null;
+    let direction: 'credit' | 'debit' | undefined;
+
+    if (debitIndex >= 0 || creditIndex >= 0) {
+      const debitValue = debitIndex >= 0 ? parseNumeric(columns[debitIndex] ?? '') : null;
+      const creditValue = creditIndex >= 0 ? parseNumeric(columns[creditIndex] ?? '') : null;
+      if (creditValue !== null && creditValue > 0) {
+        amount = Math.abs(creditValue);
+        direction = 'credit';
+      } else if (debitValue !== null && debitValue > 0) {
+        amount = Math.abs(debitValue);
+        direction = 'debit';
+      }
+    }
+
+    if (amount === null && amountIndex >= 0) {
+      const parsedAmount = parseNumeric(columns[amountIndex] ?? '');
+      if (parsedAmount !== null) {
+        amount = Math.abs(parsedAmount);
+        direction = parsedAmount < 0 ? 'debit' : 'credit';
+      }
+    }
+
+    if (amount === null || amount <= 0) {
+      continue;
+    }
+
+    if (directionIndex >= 0) {
+      const rawDirection = (columns[directionIndex] ?? '').toLowerCase();
+      if (['debit', 'dr', 'withdrawal'].some((entry) => rawDirection.includes(entry))) {
+        direction = 'debit';
+      } else if (['credit', 'cr', 'deposit'].some((entry) => rawDirection.includes(entry))) {
+        direction = 'credit';
+      }
+    }
+
+    direction = direction ?? 'debit';
+
+    let balance = balanceIndex >= 0 ? parseNumeric(columns[balanceIndex] ?? '') : null;
+    if (balance === null) {
+      runningBalance = direction === 'credit' ? runningBalance + amount : runningBalance - amount;
+      balance = runningBalance;
+    } else {
+      runningBalance = balance;
+    }
+
+    const description = descriptionIndex >= 0 ? columns[descriptionIndex] || undefined : undefined;
+    output.push({
+      booked_at: bookedAt,
+      amount: Number(amount.toFixed(2)),
+      balance: Number(balance.toFixed(2)),
+      direction,
+      description,
+    });
+  }
+
+  return output;
+};
+
+const buildSyntheticTransactions = (
+  monthlyIncome: number,
+  purchaseAmount: number
+): StatementTransactionInput[] => {
+  const now = new Date();
+  const transactions: StatementTransactionInput[] = [];
+  let balance = monthlyIncome * 0.25;
+
+  for (let day = 90; day >= 0; day -= 5) {
+    const current = new Date(now);
+    current.setDate(current.getDate() - day);
+
+    if (day % 30 === 0) {
+      const creditAmount = monthlyIncome;
+      balance += creditAmount;
+      transactions.push({
+        booked_at: current.toISOString(),
+        amount: Number(creditAmount.toFixed(2)),
+        balance: Number(balance.toFixed(2)),
+        direction: 'credit',
+        description: 'salary_credit',
+      });
+      continue;
+    }
+
+    const debitAmount =
+      monthlyIncome * (0.04 + ((day % 20) / 100)) + (day < 20 ? purchaseAmount * 0.08 : 0);
+    balance -= debitAmount;
+    transactions.push({
+      booked_at: current.toISOString(),
+      amount: Number(Math.max(debitAmount, 250).toFixed(2)),
+      balance: Number(balance.toFixed(2)),
+      direction: 'debit',
+      description: 'daily_expense',
+    });
+  }
+
+  return transactions;
+};
+
+const buildStatementTransactions = async (
+  file: File | null,
+  monthlyIncome: number,
+  purchaseAmount: number
+): Promise<StatementTransactionInput[]> => {
+  if (file && (file.type.includes('csv') || file.name.toLowerCase().endsWith('.csv'))) {
+    const parsed = await parseCsvTransactions(file);
+    if (parsed.length >= 12) {
+      return parsed;
+    }
+  }
+  return buildSyntheticTransactions(monthlyIncome, purchaseAmount);
+};
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -123,6 +282,11 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (!emiFormData.bankStatement) {
+      alert('Please upload your bank statement');
+      return;
+    }
+
     const avgMonthlyInflow = Number(emiFormData.monthlyIncome);
     if (!Number.isFinite(avgMonthlyInflow) || avgMonthlyInflow <= 0) {
       alert('Please enter a valid monthly income');
@@ -135,21 +299,38 @@ export default function CheckoutPage() {
     setRiskResult(null);
 
     try {
-      const response = await createApplication({
-        order_amount_inr: total,
-        tenure_months: emiDuration,
-        bank: selectedBank,
-        monthly_income_inr: avgMonthlyInflow,
-        card_type: emiFormData.cardType,
-        card_last_four: emiFormData.cardLastFour,
-        metadata: {
-          delivery_option: deliveryOption,
-          cart_items: cart.length,
+      const statementFile = emiFormData.bankStatement;
+      const document = await createStatementDocument({
+        storage_key: `uploads/${Date.now()}-${statementFile?.name ?? 'statement-upload'}`,
+        file_name: statementFile?.name,
+        mime_type: statementFile?.type,
+        source: 'checkout',
+      });
+
+      if (document.extraction_job_id) {
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          const job = await fetchExtractionJob(document.extraction_job_id);
+          if (job.status === 'completed' || job.status === 'failed') {
+            break;
+          }
+          await pause(900);
+        }
+      }
+
+      const transactions = await buildStatementTransactions(statementFile, avgMonthlyInflow, total);
+      const response = await createAssessment({
+        document_id: document.id,
+        statement: {
+          segment: 'gig_worker',
+          statement_window_days: 90,
+          purchase_amount: total,
+          tenure_weeks: emiDuration * 4,
+          transactions,
         },
       });
 
       setRiskResult({
-        applicationUuid: response.application_uuid,
+        assessmentId: response.id,
         decision: response.final_decision,
         riskProbability: response.risk_probability,
         decisionSource: response.decision_source,
@@ -193,7 +374,8 @@ export default function CheckoutPage() {
           bank: selectedBank,
           status: 'approved' as const,
           cardLastFour: emiFormData.cardLastFour,
-          applicationUuid: riskResult?.applicationUuid,
+          applicationUuid: riskResult?.assessmentId,
+          assessmentId: riskResult?.assessmentId,
           riskProbability: riskResult?.riskProbability,
           decisionSource: riskResult?.decisionSource,
         } : undefined,
@@ -431,7 +613,7 @@ export default function CheckoutPage() {
 
                       <input
                         type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
+                        accept=".csv,.pdf,.jpg,.jpeg,.png"
                         onChange={(e) => setEmiFormData({ ...emiFormData, bankStatement: e.target.files?.[0] || null })}
                         className="input-field"
                       />
@@ -442,14 +624,14 @@ export default function CheckoutPage() {
 
                       {emiApprovalStatus === 'approved' && (
                         <div className="rounded-xl border border-highlight/30 bg-highlight/10 p-3 text-sm text-highlight">
-                          EMI approved · APP-{riskResult?.applicationUuid?.slice(0, 8)} · Risk probability{' '}
+                          EMI approved · ASM-{riskResult?.assessmentId?.slice(0, 8)} · Risk probability{' '}
                           {riskResult ? `${(riskResult.riskProbability * 100).toFixed(2)}%` : 'N/A'}
                         </div>
                       )}
 
                       {emiApprovalStatus === 'rejected' && (
                         <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-                          {emiError ? 'Risk service unavailable. Please retry.' : `Risk probability ${riskResult ? `${(riskResult.riskProbability * 100).toFixed(2)}%` : 'N/A'}`}
+                          {emiError ? emiError : `Risk probability ${riskResult ? `${(riskResult.riskProbability * 100).toFixed(2)}%` : 'N/A'}`}
                         </div>
                       )}
                     </div>
@@ -578,7 +760,7 @@ export default function CheckoutPage() {
                 <CheckCircle className="h-12 w-12 text-highlight mx-auto" />
                 <h3 className="text-xl font-semibold mt-4">EMI Approved</h3>
                 <p className="text-sm text-muted mt-2">
-                  Decision from {selectedBank}: Approve · APP-{riskResult?.applicationUuid?.slice(0, 8)}
+                  Decision from {selectedBank}: Approve · ASM-{riskResult?.assessmentId?.slice(0, 8)}
                 </p>
                 <Button onClick={() => setShowApprovalModal(false)} className="mt-6 w-full">
                   Continue

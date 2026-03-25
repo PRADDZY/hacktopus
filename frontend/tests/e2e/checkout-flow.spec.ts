@@ -9,17 +9,57 @@ test('completes an EMI checkout flow', async ({ page }) => {
   page.on('dialog', async (dialog) => {
     await dialog.accept();
   });
-  await page.route('**/predict', async (route) => {
+  await page.route('**/v1/documents', async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          id: 'doc-test-1',
+          storage_key: 'uploads/mock.pdf',
+          extraction_job_id: 'job-test-1',
+          extraction_job_status: 'queued',
+        },
+        error: null,
+        meta: { requestId: 'req-doc-1', timestamp: new Date().toISOString() },
+      }),
+    });
+  });
+
+  await page.route('**/v1/extraction-jobs/job-test-1', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        decision: 'Approve',
-        risk_probability: 0.12,
-        model_version: 'ensemble-catboost-ft-v1',
-        schema_version: 'risk-v2.0.0',
-        calibration_bucket: 'very_low',
-        reasons: [],
+        data: {
+          id: 'job-test-1',
+          document_id: 'doc-test-1',
+          status: 'completed',
+          document_status: 'ready',
+        },
+        error: null,
+        meta: { requestId: 'req-job-1', timestamp: new Date().toISOString() },
+      }),
+    });
+  });
+
+  await page.route('**/v1/assessments', async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          id: 'asm-test-1',
+          owner_sub: 'user-1',
+          document_id: 'doc-test-1',
+          extracted_feature_id: 'feat-1',
+          risk_probability: 0.12,
+          auto_decision: 'Approve',
+          final_decision: 'Approve',
+          decision_source: 'auto',
+        },
+        error: null,
+        meta: { requestId: 'req-asm-1', timestamp: new Date().toISOString() },
       }),
     });
   });

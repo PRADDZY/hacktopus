@@ -70,6 +70,7 @@ export interface EMIDetails {
   status: 'approved' | 'rejected' | 'pending';
   cardLastFour: string;
   applicationUuid?: string;
+  assessmentId?: string;
   riskProbability?: number;
   decisionSource?: 'auto' | 'manual_override';
 }
@@ -188,6 +189,64 @@ export interface CreateApplicationRequest {
   card_type: 'credit' | 'fairlens';
   card_last_four: string;
   metadata?: Record<string, unknown>;
+}
+
+export type StatementDirection = 'credit' | 'debit';
+
+export interface StatementTransactionInput {
+  booked_at: string;
+  amount: number;
+  balance: number;
+  direction?: StatementDirection;
+  description?: string;
+}
+
+export interface StatementFeaturePayload {
+  segment: string;
+  statement_window_days: number;
+  purchase_amount: number;
+  tenure_weeks: number;
+  transactions: StatementTransactionInput[];
+}
+
+export interface WorkerDocumentItem {
+  id: string;
+  owner_sub?: string;
+  source?: string;
+  storage_key: string;
+  file_name?: string | null;
+  mime_type?: string | null;
+  status?: string;
+  extraction_job_id?: string | null;
+  extraction_job_status?: string | null;
+  external_job_id?: string | null;
+}
+
+export interface WorkerExtractionJobItem {
+  id: string;
+  document_id: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  external_job_id?: string | null;
+  error_message?: string | null;
+  document_status?: string | null;
+}
+
+export interface CreateAssessmentRequest {
+  document_id: string;
+  statement?: StatementFeaturePayload;
+}
+
+export interface WorkerAssessmentItem {
+  id: string;
+  owner_sub: string;
+  document_id: string;
+  extracted_feature_id?: string | null;
+  risk_probability: number;
+  auto_decision: 'Approve' | 'Decline';
+  final_decision: 'Approve' | 'Decline';
+  decision_source: 'auto' | 'manual_override';
+  reviewed_by?: string | null;
+  override_reason?: string | null;
 }
 
 export type BackendApplicationItem = BackendLogItem & {
