@@ -10,6 +10,7 @@ Cloudflare Worker API scaffold for the migration from FastAPI runtime to Cloudfl
   - `GET /v1/protected/user` (requires authenticated token when `AUTH_REQUIRED=true`)
   - `GET /v1/protected/admin` (requires admin role)
 - Domain foundation endpoints:
+  - `POST /v1/assistant/query`
   - `POST /v1/applications`
   - `GET /v1/applications/me`
   - `GET /v1/admin/applications`
@@ -92,6 +93,8 @@ Auth0/JWKS mode remains available as fallback via:
 - `MODAL_EXTRACTION_ENDPOINT` (optional, enables dispatch during document creation)
 - `MODAL_EXTRACTION_TOKEN` (optional bearer token for Modal endpoint)
 - `EXTRACTION_CALLBACK_SECRET` (required for callback endpoint verification)
+- `AI_ASSISTANT_ENDPOINT` (optional remote assistant endpoint; fallback is worker rule-based assistant)
+- `AI_ASSISTANT_TOKEN` (optional bearer token for remote assistant endpoint)
 
 ## Admin Assessment Filters
 

@@ -89,6 +89,7 @@ npm run dev
 ## Key Endpoints
 
 Worker API (primary app domain)
+- `POST /v1/assistant/query`
 - `POST /v1/applications`
 - `GET /v1/applications/me`
 - `GET /v1/admin/applications`

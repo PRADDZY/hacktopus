@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  queryAssistant,
   createAssessment,
   createApplication,
   createStatementDocument,
@@ -386,5 +387,32 @@ export const run = async () => {
     await withMockedFetch(async () => new Response('not-json', { status: 200 }), async () => {
       await assert.rejects(fetchAuditLogs(1, 5), /invalid json/i);
     });
+  }
+
+  {
+    const assistantFixture = {
+      reply: 'Try uploading a CSV statement with at least 3 months of transactions.',
+      category: 'checkout',
+      suggested_actions: [{ label: 'Go to checkout', action: 'navigate', target: '/checkout' }],
+      escalation: { email: 'support@fairlens.ai', phone: '+91 98000 12345' },
+      source: 'rule_based',
+    } as const;
+
+    await withMockedFetch(
+      async () =>
+        jsonResponse({
+          data: assistantFixture,
+          error: null,
+          meta: { requestId: 'req-assistant', timestamp: '2026-03-26T00:00:00.000Z' },
+        }),
+      async () => {
+        const response = await queryAssistant({
+          message: 'EMI not getting approved',
+          context: { page: '/checkout' },
+        });
+        assert.equal(response.category, 'checkout');
+        assert.equal(response.suggested_actions[0]?.target, '/checkout');
+      }
+    );
   }
 };

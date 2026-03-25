@@ -1,6 +1,7 @@
 import RoleGate from '@/components/auth/RoleGate';
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
+import AIAssistantWidget from '@/components/support/AIAssistantWidget';
 
 export default function DashboardLayout({
   children,
@@ -15,6 +16,7 @@ export default function DashboardLayout({
           <DashboardTopbar />
           <main className="flex-1 px-6 pb-12 pt-6">{children}</main>
         </div>
+        <AIAssistantWidget />
       </div>
     </RoleGate>
   );

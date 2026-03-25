@@ -1,5 +1,6 @@
 import ShopFooter from '@/components/shop/ShopFooter';
 import ShopNavbar from '@/components/shop/ShopNavbar';
+import AIAssistantWidget from '@/components/support/AIAssistantWidget';
 
 export default function ShopLayout({
   children,
@@ -11,6 +12,7 @@ export default function ShopLayout({
       <ShopNavbar />
       <main className="px-6 pb-16 pt-8">{children}</main>
       <ShopFooter />
+      <AIAssistantWidget />
     </div>
   );
 }

@@ -54,6 +54,7 @@ Dashboard:
 - Auth provider priority: Supabase (if `NEXT_PUBLIC_SUPABASE_*` is set), otherwise Auth0 fallback.
 - Admin role is validated server-side via Worker auth (`/auth/me` role resolution).
 - API calls include `Authorization`, `X-Request-Id`, and `Idempotency-Key` headers when applicable.
+- AI assistant widget is available in both shop and dashboard layouts via Worker `POST /v1/assistant/query`.
 - Checkout EMI flow is statement-first via Worker `/v1/documents` + `/v1/assessments`.
 - Dashboard stats/logs and decision review use Worker `/v1/*` routes.
 

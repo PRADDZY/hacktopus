@@ -338,3 +338,29 @@ export interface FairlensPredictResponse {
   calibration_bucket: string;
   reasons: PredictionReason[];
 }
+
+export type AssistantActionType = 'navigate' | 'retry' | 'contact' | 'none';
+
+export interface AssistantAction {
+  label: string;
+  action: AssistantActionType;
+  target?: string;
+}
+
+export interface AssistantEscalation {
+  email: string;
+  phone: string;
+}
+
+export interface AssistantQueryRequest {
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+export interface AssistantQueryResponse {
+  reply: string;
+  category: 'checkout' | 'auth' | 'emi' | 'dashboard' | 'security' | 'general';
+  suggested_actions: AssistantAction[];
+  escalation?: AssistantEscalation;
+  source?: 'rule_based' | 'remote';
+}

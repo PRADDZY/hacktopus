@@ -1,4 +1,6 @@
 import {
+  AssistantQueryRequest,
+  AssistantQueryResponse,
   AdminOverrideRequest,
   BackendApplicationItem,
   BackendApplicationsResponse,
@@ -410,5 +412,18 @@ export async function fetchAuditLogs(
     throw new Error(await parseError(response));
   }
   return parseJsonResponse<BackendAuditLogsResponse>(response, 'Audit logs');
+}
+
+export async function queryAssistant(payload: AssistantQueryRequest): Promise<AssistantQueryResponse> {
+  const headers = await buildHeaders({ isMutation: false, includeJson: true });
+  const response = await fetch(`${apiBaseUrl}/v1/assistant/query`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return parseJsonResponse<AssistantQueryResponse>(response, 'Assistant');
 }
 

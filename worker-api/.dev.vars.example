@@ -18,6 +18,8 @@ FEATURE_EXTRACTION_ENDPOINT=https://<ml-service-endpoint>/featureize/statement
 MODAL_EXTRACTION_ENDPOINT=https://<modal-endpoint>/extract
 # MODAL_EXTRACTION_TOKEN=<optional-modal-bearer-token>
 EXTRACTION_CALLBACK_SECRET=<shared-callback-secret>
+# AI_ASSISTANT_ENDPOINT=https://<assistant-endpoint>/query
+# AI_ASSISTANT_TOKEN=<optional-assistant-bearer-token>
 
 # Optional Auth0 fallback mode (leave unset when using Supabase auth):
 # AUTH_ISSUER_BASE_URL=https://<your-auth0-domain>/

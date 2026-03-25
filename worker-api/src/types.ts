@@ -29,6 +29,8 @@ export type AppBindings = {
   MODAL_EXTRACTION_ENDPOINT?: string;
   MODAL_EXTRACTION_TOKEN?: string;
   EXTRACTION_CALLBACK_SECRET?: string;
+  AI_ASSISTANT_ENDPOINT?: string;
+  AI_ASSISTANT_TOKEN?: string;
   IDEMPOTENCY_TTL_SECONDS?: string;
 };
 

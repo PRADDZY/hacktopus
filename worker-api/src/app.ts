@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { optionalAuth, requireAdminAuth, requireUserAuth } from './auth';
 import { requestContextMiddleware, success } from './http';
+import assistantRoutes from './routes/assistant';
 import domainRoutes from './routes/domain';
 import type { AppEnv } from './types';
 
@@ -40,3 +41,4 @@ app.get('/v1/protected/admin', requireAdminAuth, (c) =>
 );
 
 app.route('/v1', domainRoutes);
+app.route('/v1/assistant', assistantRoutes);
