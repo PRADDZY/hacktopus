@@ -27,7 +27,7 @@ export default function SignupPage() {
         role: 'user',
         returnTo: nextPath,
       });
-      if (success && (!isAuthConfigured || authProvider === 'supabase')) {
+      if (success && authProvider === 'supabase') {
         router.push(nextPath);
       }
     } catch (signupError) {
@@ -45,7 +45,7 @@ export default function SignupPage() {
         <p className="text-sm text-muted">
           {isAuthConfigured
             ? 'Sign-up continues in secure hosted authentication.'
-            : 'Create a profile to track EMI approvals and orders.'}
+            : 'Sign-up is unavailable until auth variables are configured.'}
         </p>
         {error ? <p className="text-sm text-rose-700">{error}</p> : null}
         <div className="grid md:grid-cols-2 gap-3">
@@ -75,7 +75,7 @@ export default function SignupPage() {
             onChange={(event) => setPassword(event.target.value)}
           />
         </div>
-        <Button onClick={() => void handleSignup()} disabled={isSubmitting}>
+        <Button onClick={() => void handleSignup()} disabled={isSubmitting || !isAuthConfigured}>
           Create account
         </Button>
       </div>

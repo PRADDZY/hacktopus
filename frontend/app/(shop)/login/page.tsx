@@ -24,7 +24,7 @@ export default function LoginPage() {
     setError(null);
     try {
       const success = await login(email, password, { role: 'user', returnTo: nextPath });
-      if (success && (!isAuthConfigured || authProvider === 'supabase')) {
+      if (success && authProvider === 'supabase') {
         router.push(nextPath);
       }
     } catch (loginError) {
@@ -39,7 +39,7 @@ export default function LoginPage() {
     setError(null);
     try {
       const success = await loginWithPhone(phone, otp, { role: 'user', returnTo: nextPath });
-      if (success && (!isAuthConfigured || authProvider === 'supabase')) {
+      if (success && authProvider === 'supabase') {
         router.push(nextPath);
       }
     } catch (loginError) {
@@ -57,7 +57,7 @@ export default function LoginPage() {
         <p className="text-sm text-muted">
           {isAuthConfigured
             ? 'Continue using secure sign-in.'
-            : 'Access your FairLens checkout profile.'}
+            : 'Authentication is unavailable in this environment.'}
         </p>
         {error ? <p className="text-sm text-rose-700">{error}</p> : null}
         <div className="space-y-3">
@@ -75,7 +75,7 @@ export default function LoginPage() {
             onChange={(event) => setPassword(event.target.value)}
           />
         </div>
-        <Button onClick={() => void handleEmailLogin()} disabled={isSubmitting}>
+        <Button onClick={() => void handleEmailLogin()} disabled={isSubmitting || !isAuthConfigured}>
           Continue with email
         </Button>
       </div>
@@ -85,7 +85,7 @@ export default function LoginPage() {
         <p className="text-sm text-muted">
           {isAuthConfigured
             ? 'Phone and passkey sign-in are handled by the auth provider.'
-            : 'Enter OTP 123456 in local mode.'}
+            : 'Phone OTP sign-in is disabled until auth is configured.'}
         </p>
         <input
           className="input-field"
@@ -99,7 +99,11 @@ export default function LoginPage() {
           value={otp}
           onChange={(event) => setOtp(event.target.value)}
         />
-        <Button variant="outline" onClick={() => void handlePhoneLogin()} disabled={isSubmitting}>
+        <Button
+          variant="outline"
+          onClick={() => void handlePhoneLogin()}
+          disabled={isSubmitting || !isAuthConfigured}
+        >
           Continue with OTP
         </Button>
       </div>

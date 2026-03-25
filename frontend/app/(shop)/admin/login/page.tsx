@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
     setError(null);
     try {
       const success = await login(email, password, { role: 'admin', returnTo: nextPath });
-      if (success && (!isAuthConfigured || authProvider === 'supabase')) {
+      if (success && authProvider === 'supabase') {
         router.push(nextPath);
       }
     } catch (loginError) {
@@ -37,7 +37,9 @@ export default function AdminLoginPage() {
         <p className="section-kicker">Admin Access</p>
         <h1 className="section-title">Risk Console Sign In</h1>
         <p className="text-sm text-muted">
-          Continue with admin authentication to access portfolio and audit routes.
+          {isAuthConfigured
+            ? 'Continue with admin authentication to access portfolio and audit routes.'
+            : 'Admin sign-in is unavailable until auth is configured.'}
         </p>
         {error ? <p className="text-sm text-rose-700">{error}</p> : null}
         {authProvider === 'supabase' && (
@@ -57,7 +59,7 @@ export default function AdminLoginPage() {
             />
           </div>
         )}
-        <Button onClick={() => void handleAdminLogin()} disabled={isSubmitting}>
+        <Button onClick={() => void handleAdminLogin()} disabled={isSubmitting || !isAuthConfigured}>
           Continue as admin
         </Button>
       </div>

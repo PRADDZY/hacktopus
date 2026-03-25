@@ -150,9 +150,7 @@ const mapProviderUserToAppUser = (providerUser: Record<string, unknown>) => {
 };
 
 const resolveApiBaseUrl = (): string =>
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') ??
-  '';
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
 
 const readServerRoles = async (token: string): Promise<string[] | null> => {
   const apiBase = resolveApiBaseUrl();
@@ -212,7 +210,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (parsed) {
         setState({
           ...parsed,
-          auth: authConfigured ? initialState.auth : parsed.auth,
+          auth: initialState.auth,
         });
       } else {
         console.warn('Resetting invalid stored state cache');
@@ -224,6 +222,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const refreshAuth = async () => {
     if (!authConfigured) {
+      setState((prev) => ({
+        ...prev,
+        auth: initialState.auth,
+      }));
       setIsAuthReady(true);
       return;
     }
@@ -287,9 +289,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const persistedState: AppState = authConfigured
-      ? { ...state, auth: initialState.auth }
-      : state;
+    const persistedState: AppState = { ...state, auth: initialState.auth };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(persistedState));
   }, [authConfigured, isStateReady, state]);
 
@@ -298,45 +298,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     password: string,
     options: AuthActionOptions = {}
   ): Promise<boolean> => {
-    if (authConfigured) {
-      if (authProvider === 'supabase') {
-        if (!email.trim() || !password.trim()) {
-          return false;
-        }
-        await loginWithEmailPassword({
-          email: email.trim(),
-          password: password.trim(),
-        });
-        await refreshAuth();
-        return true;
+    if (!authConfigured) {
+      throw new Error('Authentication is not configured. Set Supabase environment variables.');
+    }
+
+    if (authProvider === 'supabase') {
+      if (!email.trim() || !password.trim()) {
+        return false;
       }
-
-      await beginAuthFlow({
-        mode: 'login',
-        role: options.role ?? 'user',
-        returnTo: options.returnTo,
+      await loginWithEmailPassword({
+        email: email.trim(),
+        password: password.trim(),
       });
+      await refreshAuth();
       return true;
     }
 
-    if (email && password) {
-      const role = options.role ?? 'user';
-      setState((prev) => ({
-        ...prev,
-        auth: {
-          isAuthenticated: true,
-          user: {
-            id: 'user-001',
-            name: email.split('@')[0],
-            email,
-            phone: '9876543210',
-            roles: [role],
-          },
-        },
-      }));
-      return true;
-    }
-    return false;
+    await beginAuthFlow({
+      mode: 'login',
+      role: options.role ?? 'user',
+      returnTo: options.returnTo,
+    });
+    return true;
   };
 
   const loginWithPhone = async (
@@ -344,39 +327,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     otp: string,
     options: AuthActionOptions = {}
   ): Promise<boolean> => {
-    if (authConfigured) {
-      if (authProvider === 'supabase') {
-        await loginWithPhoneOtp(phone, otp);
-        await refreshAuth();
-        return true;
-      }
+    if (!authConfigured) {
+      throw new Error('Authentication is not configured. Set Supabase environment variables.');
+    }
 
-      await beginAuthFlow({
-        mode: 'login',
-        role: options.role ?? 'user',
-        returnTo: options.returnTo,
-      });
+    if (authProvider === 'supabase') {
+      await loginWithPhoneOtp(phone, otp);
+      await refreshAuth();
       return true;
     }
 
-    if (phone && otp === '123456') {
-      const role = options.role ?? 'user';
-      setState((prev) => ({
-        ...prev,
-        auth: {
-          isAuthenticated: true,
-          user: {
-            id: 'user-001',
-            name: 'User',
-            email: `${phone}@example.com`,
-            phone,
-            roles: [role],
-          },
-        },
-      }));
-      return true;
-    }
-    return false;
+    await beginAuthFlow({
+      mode: 'login',
+      role: options.role ?? 'user',
+      returnTo: options.returnTo,
+    });
+    return true;
   };
 
   const signup = async (
@@ -386,45 +352,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     phone: string,
     options: AuthActionOptions = {}
   ): Promise<boolean> => {
-    if (authConfigured) {
-      if (authProvider === 'supabase') {
-        await signupWithEmailPassword({
-          name,
-          email: email.trim(),
-          password: password.trim(),
-          phone: phone.trim(),
-          role: options.role ?? 'user',
-        });
-        await refreshAuth();
-        return true;
-      }
+    if (!authConfigured) {
+      throw new Error('Authentication is not configured. Set Supabase environment variables.');
+    }
 
-      await beginAuthFlow({
-        mode: 'signup',
+    if (authProvider === 'supabase') {
+      await signupWithEmailPassword({
+        name,
+        email: email.trim(),
+        password: password.trim(),
+        phone: phone.trim(),
         role: options.role ?? 'user',
-        returnTo: options.returnTo,
       });
+      await refreshAuth();
       return true;
     }
 
-    if (name && email && password && phone) {
-      const role = options.role ?? 'user';
-      setState((prev) => ({
-        ...prev,
-        auth: {
-          isAuthenticated: true,
-          user: {
-            id: 'user-001',
-            name,
-            email,
-            phone,
-            roles: [role],
-          },
-        },
-      }));
-      return true;
-    }
-    return false;
+    await beginAuthFlow({
+      mode: 'signup',
+      role: options.role ?? 'user',
+      returnTo: options.returnTo,
+    });
+    return true;
   };
 
   const logout = async () => {

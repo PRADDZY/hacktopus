@@ -21,10 +21,11 @@ import { getAccessToken } from '@/lib/authClient';
 
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') ??
-  'http://localhost:10000';
+  'http://localhost:8787';
 const riskApiBaseUrl =
-  process.env.NEXT_PUBLIC_RISK_API_URL?.replace(/\/$/, '') ?? apiBaseUrl;
+  process.env.NEXT_PUBLIC_RISK_API_URL?.replace(/\/$/, '') ??
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
+  'http://localhost:9000';
 
 type ApiEnvelopeError = {
   code?: string;
@@ -110,7 +111,7 @@ export const mapLogToEMIRequest = (item: BackendLogItem): EMIRequest => {
     riskScore,
     debtProbability: riskScore,
     emiAmount,
-    productCategory: item.bank ? `EMI • ${item.bank}` : 'Retail Purchase',
+    productCategory: item.bank ? `EMI - ${item.bank}` : 'Retail Purchase',
     status: toStatus(effectiveDecision),
     monthlyIncome: Math.round(item.monthly_income_inr ?? item.avg_monthly_inflow),
     existingEmis,

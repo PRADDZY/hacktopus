@@ -65,17 +65,13 @@ Environment variables (frontend/.env.example):
 
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8787
-NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
-NEXT_PUBLIC_RISK_API_URL=http://localhost:10000
+NEXT_PUBLIC_RISK_API_URL=http://localhost:9000
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase-anon-key>
-NEXT_PUBLIC_AUTH0_DOMAIN=<tenant>.auth0.com
-NEXT_PUBLIC_AUTH0_CLIENT_ID=<client-id>
-NEXT_PUBLIC_AUTH0_AUDIENCE=<api-audience>
 NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
 ```
 
-Auth provider precedence in frontend: Supabase first, Auth0 fallback.
+Supabase auth is required for login/signup/admin route access.
 
 ### 4) Worker API (primary runtime)
 
