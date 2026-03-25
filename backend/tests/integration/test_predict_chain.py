@@ -58,12 +58,23 @@ def _wait_for_health(port: int, timeout: float = 6.0) -> bool:
 
 def _build_payload():
     return {
-        'avg_monthly_inflow': 88000,
-        'inflow_volatility': 0.21,
-        'avg_monthly_outflow': 51000,
+        'segment': 'gig_worker',
+        'monthly_inflow': 88000,
+        'monthly_outflow': 51000,
+        'inflow_volatility_90d': 0.21,
+        'outflow_volatility_90d': 0.24,
+        'deposit_count_30d': 6,
+        'days_since_last_income': 2,
+        'avg_balance_30d': 21000,
         'min_balance_30d': 15000,
-        'neg_balance_days_30d': 2,
+        'negative_balance_days_30d': 2,
+        'essential_spend_ratio': 0.58,
+        'active_loan_count': 1,
+        'monthly_installment_burden': 8200,
+        'purchase_amount': 29000,
+        'tenure_weeks': 24,
         'purchase_to_inflow_ratio': 0.33,
+        'installment_to_inflow_ratio': 0.093,
         'total_burden_ratio': 0.52,
         'buffer_ratio': 0.17,
         'stress_index': 0.43,
@@ -102,6 +113,9 @@ def test_predict_chain_uses_ml_service():
             data = response.json()
             assert data['risk_probability'] == stub_probability
             assert data['decision'] == 'Decline'
+            assert data['schema_version'] == 'risk-v2.0.0'
+            assert data['model_version']
+            assert isinstance(data['reasons'], list)
 
             logs = client.get('/logs').json()
             assert logs['total'] == 1

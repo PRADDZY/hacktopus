@@ -31,12 +31,23 @@ Orchestrates BNPL risk predictions. Calls the ML service, applies the decision t
 
 ```json
 {
-  "avg_monthly_inflow": 100000,
-  "inflow_volatility": 0.2,
-  "avg_monthly_outflow": 60000,
+  "segment": "gig_worker",
+  "monthly_inflow": 100000,
+  "monthly_outflow": 60000,
+  "inflow_volatility_90d": 0.2,
+  "outflow_volatility_90d": 0.24,
+  "deposit_count_30d": 6,
+  "days_since_last_income": 2,
+  "avg_balance_30d": 22000,
   "min_balance_30d": 15000,
-  "neg_balance_days_30d": 0,
+  "negative_balance_days_30d": 0,
+  "essential_spend_ratio": 0.61,
+  "active_loan_count": 1,
+  "monthly_installment_burden": 8500,
+  "purchase_amount": 30000,
+  "tenure_weeks": 24,
   "purchase_to_inflow_ratio": 0.3,
+  "installment_to_inflow_ratio": 0.085,
   "total_burden_ratio": 0.45,
   "buffer_ratio": 0.25,
   "stress_index": 0.2
@@ -48,7 +59,19 @@ Response:
 ```json
 {
   "risk_probability": 0.216425,
-  "decision": "Approve"
+  "decision": "Approve",
+  "model_version": "ensemble-catboost-ft-v1",
+  "schema_version": "risk-v2.0.0",
+  "calibration_bucket": "low",
+  "reasons": [
+    {
+      "code": "BUFFER_STRENGTH",
+      "feature": "buffer_ratio",
+      "direction": "down",
+      "impact": 0.09,
+      "message": "Healthy liquidity buffer lowers near-term repayment risk."
+    }
+  ]
 }
 ```
 

@@ -85,9 +85,17 @@ def predict(
             audit_action="Risk decision",
         )
         final_decision = transaction.final_decision or transaction.decision
+        model_version = str(getattr(transaction, "_model_version", "unknown-model"))
+        schema_version = str(getattr(transaction, "_schema_version", "risk-v2.0.0"))
+        calibration_bucket = str(getattr(transaction, "_calibration_bucket", "unknown"))
+        reasons = list(getattr(transaction, "_reasons", []))
         return PredictResponse(
             risk_probability=round(float(transaction.risk_probability), 6),
             decision=final_decision,
+            model_version=model_version,
+            schema_version=schema_version,
+            calibration_bucket=calibration_bucket,
+            reasons=reasons,
         )
     except HTTPException:
         db.rollback()

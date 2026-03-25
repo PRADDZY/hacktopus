@@ -15,7 +15,8 @@ Worker API (Cloudflare, Wave 1 foundation)
 - Wave 4 contract hardening: unified response envelope, request-id tracing, idempotent mutation routes.
 
 ML Service (FastAPI)
-- Hosts the trained XGBoost model and returns risk probability.
+- Serves the risk scoring contract (`risk-v2.0.0`) with explainability reasons.
+- Supports CatBoost+FT ensemble artifacts and falls back to local baseline model artifacts.
 
 Database
 - PostgreSQL in production, SQLite by default for local dev.

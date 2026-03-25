@@ -20,20 +20,36 @@ def _derive_predict_payload(payload: CreateApplicationRequest) -> PredictRequest
     safe_inflow = max(payload.monthly_income_inr, 1)
     purchase_to_inflow_ratio = payload.order_amount_inr / safe_inflow
     avg_monthly_outflow = min(safe_inflow * 0.95, safe_inflow * 0.5 + monthly_emi)
+    avg_balance_30d = max(0.0, safe_inflow - avg_monthly_outflow)
     min_balance_30d = max(0.0, safe_inflow - avg_monthly_outflow - monthly_emi * 0.2)
     inflow_volatility = min(1.0, max(0.01, 0.12 + purchase_to_inflow_ratio * 0.2))
+    outflow_volatility = min(1.0, max(0.02, 0.16 + purchase_to_inflow_ratio * 0.15))
     neg_balance_days_30d = 4 if min_balance_30d == 0 else (2 if min_balance_30d < safe_inflow * 0.08 else 0)
     total_burden_ratio = min(1.0, (avg_monthly_outflow + monthly_emi) / safe_inflow)
+    installment_to_inflow_ratio = min(1.0, monthly_emi / safe_inflow)
     buffer_ratio = max(0.0, min_balance_30d / safe_inflow)
     stress_index = min(1.0, inflow_volatility * 0.45 + total_burden_ratio * 0.55)
+    essential_spend_ratio = min(1.0, max(0.1, avg_monthly_outflow / safe_inflow))
+    active_loan_count = 2 if total_burden_ratio > 0.65 else 1
 
     return PredictRequest(
-        avg_monthly_inflow=round(safe_inflow, 6),
-        inflow_volatility=round(inflow_volatility, 6),
-        avg_monthly_outflow=round(avg_monthly_outflow, 6),
+        segment="unknown",
+        monthly_inflow=round(safe_inflow, 6),
+        monthly_outflow=round(avg_monthly_outflow, 6),
+        inflow_volatility_90d=round(inflow_volatility, 6),
+        outflow_volatility_90d=round(outflow_volatility, 6),
+        deposit_count_30d=4,
+        days_since_last_income=7,
+        avg_balance_30d=round(avg_balance_30d, 6),
         min_balance_30d=round(min_balance_30d, 6),
-        neg_balance_days_30d=neg_balance_days_30d,
+        negative_balance_days_30d=neg_balance_days_30d,
+        essential_spend_ratio=round(essential_spend_ratio, 6),
+        active_loan_count=active_loan_count,
+        monthly_installment_burden=round(monthly_emi, 6),
+        purchase_amount=round(payload.order_amount_inr, 6),
+        tenure_weeks=payload.tenure_months * 4,
         purchase_to_inflow_ratio=round(purchase_to_inflow_ratio, 6),
+        installment_to_inflow_ratio=round(installment_to_inflow_ratio, 6),
         total_burden_ratio=round(total_burden_ratio, 6),
         buffer_ratio=round(buffer_ratio, 6),
         stress_index=round(stress_index, 6),
@@ -48,6 +64,54 @@ def _mask_card_last_four(value: str | None) -> str | None:
 
 def _resolve_decision(risk_probability: float, threshold: float) -> Decision:
     return "Decline" if risk_probability >= threshold else "Approve"
+
+
+def _serialize_reasons(reasons: Any) -> list[dict[str, Any]]:
+    if not isinstance(reasons, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in reasons:
+        if isinstance(item, dict):
+            normalized.append(
+                {
+                    "code": str(item.get("code", "")).strip(),
+                    "feature": str(item.get("feature", "")).strip(),
+                    "direction": "down"
+                    if str(item.get("direction", "")).strip().lower() == "down"
+                    else "up",
+                    "impact": float(item.get("impact", 0.0) or 0.0),
+                    "message": str(item.get("message", "")).strip(),
+                }
+            )
+            continue
+        if hasattr(item, "code") and hasattr(item, "feature"):
+            normalized.append(
+                {
+                    "code": str(getattr(item, "code", "")).strip(),
+                    "feature": str(getattr(item, "feature", "")).strip(),
+                    "direction": "down"
+                    if str(getattr(item, "direction", "")).strip().lower() == "down"
+                    else "up",
+                    "impact": float(getattr(item, "impact", 0.0) or 0.0),
+                    "message": str(getattr(item, "message", "")).strip(),
+                }
+            )
+    return [item for item in normalized if item["code"] and item["feature"]]
+
+
+def _attach_score_context(
+    transaction: Transaction,
+    *,
+    model_version: str,
+    schema_version: str,
+    calibration_bucket: str,
+    reasons: list[dict[str, Any]],
+) -> None:
+    setattr(transaction, "_model_version", model_version)
+    setattr(transaction, "_schema_version", schema_version)
+    setattr(transaction, "_calibration_bucket", calibration_bucket)
+    setattr(transaction, "_reasons", reasons)
 
 
 def _get_idempotent_transaction(
@@ -89,9 +153,23 @@ def create_scored_transaction(
         idempotency_key=idempotency_key,
     )
     if existing:
+        _attach_score_context(
+            existing,
+            model_version="idempotent-replay",
+            schema_version="risk-v2.0.0",
+            calibration_bucket="replayed",
+            reasons=[],
+        )
         return existing
 
-    risk_probability, source = model_service.predict(predict_payload)
+    prediction = model_service.predict(predict_payload)
+    risk_probability = float(getattr(prediction, "risk_probability", 0.0))
+    source = str(getattr(prediction, "source", "local"))
+    model_version = str(getattr(prediction, "model_version", "unknown-model"))
+    schema_version = str(getattr(prediction, "schema_version", "risk-v2.0.0"))
+    calibration_bucket = str(getattr(prediction, "calibration_bucket", "unknown"))
+    reasons = _serialize_reasons(getattr(prediction, "reasons", []))
+
     auto_decision = _resolve_decision(float(risk_probability), threshold)
     final_decision: Decision = auto_decision
 
@@ -105,11 +183,11 @@ def create_scored_transaction(
         bank=bank,
         card_type=card_type,
         card_last_four_masked=_mask_card_last_four(card_last_four),
-        avg_monthly_inflow=predict_payload.avg_monthly_inflow,
-        inflow_volatility=predict_payload.inflow_volatility,
-        avg_monthly_outflow=predict_payload.avg_monthly_outflow,
+        avg_monthly_inflow=predict_payload.monthly_inflow,
+        inflow_volatility=predict_payload.inflow_volatility_90d,
+        avg_monthly_outflow=predict_payload.monthly_outflow,
         min_balance_30d=predict_payload.min_balance_30d,
-        neg_balance_days_30d=predict_payload.neg_balance_days_30d,
+        neg_balance_days_30d=predict_payload.negative_balance_days_30d,
         purchase_to_inflow_ratio=predict_payload.purchase_to_inflow_ratio,
         total_burden_ratio=predict_payload.total_burden_ratio,
         buffer_ratio=predict_payload.buffer_ratio,
@@ -124,6 +202,13 @@ def create_scored_transaction(
     db.add(transaction)
     db.flush()
     db.refresh(transaction)
+    _attach_score_context(
+        transaction,
+        model_version=model_version,
+        schema_version=schema_version,
+        calibration_bucket=calibration_bucket,
+        reasons=reasons,
+    )
 
     metadata_note = ""
     if request_metadata:

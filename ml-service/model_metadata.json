@@ -1,1 +1,47 @@
-{"threshold": 0.55, "feature_columns": ["avg_monthly_inflow", "inflow_volatility", "avg_monthly_outflow", "min_balance_30d", "neg_balance_days_30d", "purchase_to_inflow_ratio", "total_burden_ratio", "buffer_ratio", "stress_index"]}
+{
+  "threshold": 0.55,
+  "feature_columns": [
+    "avg_monthly_inflow",
+    "inflow_volatility",
+    "avg_monthly_outflow",
+    "min_balance_30d",
+    "neg_balance_days_30d",
+    "purchase_to_inflow_ratio",
+    "total_burden_ratio",
+    "buffer_ratio",
+    "stress_index"
+  ],
+  "required_features": [
+    "segment_code",
+    "monthly_inflow",
+    "monthly_outflow",
+    "inflow_volatility_90d",
+    "outflow_volatility_90d",
+    "deposit_count_30d",
+    "days_since_last_income",
+    "avg_balance_30d",
+    "min_balance_30d",
+    "negative_balance_days_30d",
+    "essential_spend_ratio",
+    "active_loan_count",
+    "monthly_installment_burden",
+    "purchase_amount",
+    "tenure_weeks",
+    "purchase_to_inflow_ratio",
+    "installment_to_inflow_ratio",
+    "total_burden_ratio",
+    "buffer_ratio",
+    "stress_index"
+  ],
+  "model_version": "ensemble-catboost-ft-v1",
+  "schema_version": "risk-v2.0.0",
+  "reason_code_catalog": [
+    "HIGH_TOTAL_BURDEN",
+    "HIGH_STRESS_INDEX",
+    "NEGATIVE_BALANCE_FREQUENCY",
+    "INFLOW_VOLATILITY_PRESSURE",
+    "CASHFLOW_LOAD",
+    "BUFFER_STRENGTH",
+    "INCOME_REGULARITY"
+  ]
+}

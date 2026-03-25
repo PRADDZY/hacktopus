@@ -16,6 +16,10 @@ test('completes an EMI checkout flow', async ({ page }) => {
       body: JSON.stringify({
         decision: 'Approve',
         risk_probability: 0.12,
+        model_version: 'ensemble-catboost-ft-v1',
+        schema_version: 'risk-v2.0.0',
+        calibration_bucket: 'very_low',
+        reasons: [],
       }),
     });
   });
