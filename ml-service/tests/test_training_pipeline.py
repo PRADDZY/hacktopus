@@ -55,3 +55,15 @@ def test_threshold_search_returns_policy_fields():
     assert 0.08 <= float(selected["threshold"]) <= 0.70
     assert "gate_policy" in selected
     assert "gate_fairness" in selected
+    assert train_ensemble._is_valid_policy_candidate(selected) is True
+
+
+def test_evaluate_handles_single_class_without_nan():
+    labels = np.zeros(8, dtype=int)
+    probs = np.array([0.1, 0.15, 0.2, 0.4, 0.6, 0.7, 0.8, 0.9], dtype=float)
+
+    metrics = train_ensemble._evaluate(labels, probs)
+    assert set(metrics.keys()) == {"roc_auc", "pr_auc", "brier"}
+    assert 0.0 <= metrics["roc_auc"] <= 1.0
+    assert 0.0 <= metrics["pr_auc"] <= 1.0
+    assert 0.0 <= metrics["brier"] <= 1.0

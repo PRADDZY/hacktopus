@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,20 @@ SEGMENT_NAME_BY_CODE = {
     4: "self_employed",
     5: "unknown",
 }
+
+
+def _to_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if not math.isfinite(parsed):
+        return fallback
+    return parsed
+
+
+def _clamp_unit(value: float) -> float:
+    return float(max(0.0, min(1.0, value)))
 
 
 def _load_dataset(path: Path) -> pd.DataFrame:
@@ -139,15 +154,37 @@ def _calibrate(probabilities: np.ndarray, labels: np.ndarray) -> IsotonicRegress
 
 
 def _evaluate(labels: np.ndarray, probs: np.ndarray) -> dict[str, float]:
+    labels = np.asarray(labels, dtype=int)
+    probs = np.asarray(probs, dtype=float)
+    probs = np.nan_to_num(probs, nan=0.5, posinf=1.0, neginf=0.0)
+    probs = np.clip(probs, 0.0, 1.0)
+
+    if labels.size == 0:
+        return {"roc_auc": 0.5, "pr_auc": 0.0, "brier": 0.25}
+
+    unique_labels = np.unique(labels)
+    if unique_labels.size < 2:
+        # AUC is undefined for a single class; keep deterministic neutral fallback.
+        roc_auc = 0.5
+    else:
+        roc_auc = float(roc_auc_score(labels, probs))
+
+    try:
+        pr_auc = float(average_precision_score(labels, probs))
+    except Exception:
+        pr_auc = 0.0
+
+    brier = float(brier_score_loss(labels, probs))
     return {
-        "roc_auc": float(roc_auc_score(labels, probs)),
-        "pr_auc": float(average_precision_score(labels, probs)),
-        "brier": float(brier_score_loss(labels, probs)),
+        "roc_auc": _clamp_unit(roc_auc),
+        "pr_auc": _clamp_unit(pr_auc),
+        "brier": _clamp_unit(brier),
     }
 
 
 def _candidate_selection_score(metrics: dict[str, float]) -> float:
-    return metrics["pr_auc"] + metrics["roc_auc"] * 0.1 - metrics["brier"] * 0.5
+    score = metrics["pr_auc"] + metrics["roc_auc"] * 0.1 - metrics["brier"] * 0.5
+    return _to_float(score, fallback=-1.0)
 
 
 def _train_target_models(
@@ -238,28 +275,53 @@ def _segment_metrics(
     return metrics
 
 
+def _is_valid_policy_candidate(candidate: dict[str, Any]) -> bool:
+    threshold = _to_float(candidate.get("threshold"), float("nan"))
+    recall_bad = _to_float(candidate.get("recall_bad"), float("nan"))
+    approval_rate = _to_float(candidate.get("approval_rate"), float("nan"))
+    min_segment_recall = _to_float(candidate.get("min_segment_recall"), float("nan"))
+    segment_recall_gap = _to_float(candidate.get("segment_recall_gap"), float("nan"))
+    score = _to_float(candidate.get("score"), float("nan"))
+
+    values = [threshold, recall_bad, approval_rate, min_segment_recall, segment_recall_gap, score]
+    if any(not math.isfinite(value) for value in values):
+        return False
+
+    return (
+        0.0 <= threshold <= 1.0
+        and 0.0 <= recall_bad <= 1.0
+        and 0.0 <= approval_rate <= 1.0
+        and 0.0 <= min_segment_recall <= 1.0
+        and 0.0 <= segment_recall_gap <= 1.0
+    )
+
+
 def _threshold_search(
     labels: np.ndarray,
     probs: np.ndarray,
     segment_codes: pd.Series,
 ) -> dict[str, Any]:
     baseline_threshold = 0.55
+    probs = np.asarray(probs, dtype=float)
+    probs = np.nan_to_num(probs, nan=0.5, posinf=1.0, neginf=0.0)
+    probs = np.clip(probs, 0.0, 1.0)
+    labels = np.asarray(labels, dtype=int)
     baseline_decisions = (probs >= baseline_threshold).astype(int)
     baseline = {
         "threshold": baseline_threshold,
-        "recall_bad": float(recall_score(labels, baseline_decisions, zero_division=0)),
-        "approval_rate": float((baseline_decisions == 0).mean()),
+        "recall_bad": _clamp_unit(float(recall_score(labels, baseline_decisions, zero_division=0))),
+        "approval_rate": _clamp_unit(float((baseline_decisions == 0).mean())),
     }
 
     best: dict[str, Any] | None = None
     for threshold in np.linspace(0.08, 0.70, 63):
         decisions = (probs >= threshold).astype(int)
-        recall_bad = float(recall_score(labels, decisions, zero_division=0))
-        approval_rate = float((decisions == 0).mean())
+        recall_bad = _clamp_unit(float(recall_score(labels, decisions, zero_division=0)))
+        approval_rate = _clamp_unit(float((decisions == 0).mean()))
         segment_stats = _segment_metrics(segment_codes, labels, decisions)
         recalls = [v["recall_bad"] for v in segment_stats.values() if v["recall_bad"] is not None]
-        min_segment_recall = float(min(recalls)) if recalls else 0.0
-        recall_gap = float(max(recalls) - min(recalls)) if len(recalls) >= 2 else 0.0
+        min_segment_recall = _clamp_unit(float(min(recalls))) if recalls else 0.0
+        recall_gap = _clamp_unit(float(max(recalls) - min(recalls))) if len(recalls) >= 2 else 0.0
 
         gate_policy = recall_bad >= PROMOTION_GATES["min_recall_bad"] and approval_rate >= PROMOTION_GATES["min_approval_rate"]
         gate_fairness = (
@@ -290,11 +352,13 @@ def _threshold_search(
             "gate_all": gate_all,
             "score": float(score),
         }
+        if not _is_valid_policy_candidate(candidate):
+            continue
         if best is None or float(candidate["score"]) > float(best["score"]):
             best = candidate
 
     if best is None:
-        raise RuntimeError("Threshold search failed to produce a candidate.")
+        raise RuntimeError("Threshold search failed to produce a valid candidate.")
 
     return {
         "baseline": baseline,
@@ -302,10 +366,25 @@ def _threshold_search(
     }
 
 
+def _validate_selected_policy(selected: dict[str, Any]) -> tuple[bool, str]:
+    if not _is_valid_policy_candidate(selected):
+        return False, "selected threshold policy contains invalid values"
+
+    if not isinstance(selected.get("segment_metrics"), dict):
+        return False, "selected threshold policy missing segment metrics"
+
+    return True, "ok"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train dual-target FairLens risk-v2 models.")
     parser.add_argument("--dataset", type=Path, required=True, help="Path to dual-target dataset parquet/csv.")
     parser.add_argument("--artifacts-dir", type=Path, required=True, help="Output directory for artifacts.")
+    parser.add_argument(
+        "--fail-on-gate",
+        action="store_true",
+        help="Exit with non-zero status when promotion gates fail.",
+    )
     args = parser.parse_args()
 
     dataset = _load_dataset(args.dataset)
@@ -336,6 +415,7 @@ def main() -> None:
         segment_codes=test_frame["segment_code"],
     )
     selected_threshold = float(threshold_eval["selected"]["threshold"])
+    policy_valid, policy_validation_message = _validate_selected_policy(threshold_eval["selected"])
 
     blended_test_metrics = _evaluate(test_frame[PRIMARY_TARGET_COLUMN].to_numpy(), test_probs)
     blended_valid_metrics = _evaluate(valid_frame[PRIMARY_TARGET_COLUMN].to_numpy(), valid_probs)
@@ -344,7 +424,7 @@ def main() -> None:
         and blended_test_metrics["brier"] <= primary["selected"]["test_metrics"]["brier"] + 0.003
     )
     promotion_pass = bool(
-        threshold_eval["selected"]["gate_all"] and quality_non_regression
+        threshold_eval["selected"]["gate_all"] and quality_non_regression and policy_valid
     )
 
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -418,6 +498,8 @@ def main() -> None:
         "gates": {
             "policy_and_fairness_pass": bool(threshold_eval["selected"]["gate_all"]),
             "quality_non_regression_pass": bool(quality_non_regression),
+            "selected_policy_valid": bool(policy_valid),
+            "selected_policy_validation_message": policy_validation_message,
             "promotion_pass": promotion_pass,
         },
         "models": {
@@ -445,6 +527,9 @@ def main() -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     print(json.dumps(manifest, indent=2))
+
+    if args.fail_on_gate and not promotion_pass:
+        raise SystemExit("Promotion gates failed. Artifacts generated for debugging but not promotable.")
 
 
 if __name__ == "__main__":

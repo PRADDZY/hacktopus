@@ -32,7 +32,8 @@ The output contains:
 cd ml-service/training
 python train_ensemble.py \
   --dataset ../../local/data/processed/risk_v2_proxy.parquet \
-  --artifacts-dir ../../local/models/risk_v2
+  --artifacts-dir ../../local/models/risk_v2 \
+  --fail-on-gate
 ```
 
 Outputs:
@@ -50,6 +51,7 @@ Outputs:
 - blended-policy threshold selection
 - segment fairness stats (`student`, `gig_worker`, `informal_worker`)
 - promotion gate pass/fail summary
+- selected policy validity checks (guards against invalid/NaN/-sentinel promotions)
 
 ## 4) Promote artifacts to inference service
 
