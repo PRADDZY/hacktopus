@@ -116,6 +116,13 @@ cd worker-api
 npm run smoke
 ```
 
+- Optional deterministic demo seed (Supabase):
+
+```bash
+cd worker-api
+SUPABASE_URL=https://<project-ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<service-role-key> npm run seed:demo
+```
+
 ## Project Structure
 
 ```

@@ -58,6 +58,26 @@ What this verifies:
 - authenticated `/v1/applications/me` (if token provided)
 - admin `/v1/stats` (if enabled)
 
+## 3.5) Deterministic Demo Seed (Recommended)
+
+From `worker-api/`:
+
+```bash
+SUPABASE_URL=https://<project-ref>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key> \
+npm run seed:demo
+```
+
+Optional role mapping when you know user UUIDs from Supabase Auth:
+
+```bash
+SUPABASE_URL=https://<project-ref>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key> \
+DEMO_ADMIN_USER_ID=<admin-user-uuid> \
+DEMO_USER_USER_ID=<user-user-uuid> \
+npm run seed:demo
+```
+
 ## 4) Demo Script (Judge Flow)
 
 1. User signup/login (Supabase auth).

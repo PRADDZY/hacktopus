@@ -145,3 +145,23 @@ SMOKE_BEARER_TOKEN=<jwt> \
 SMOKE_CHECK_ADMIN=true \
 npm run smoke
 ```
+
+## Demo Seed Data
+
+Seed deterministic dashboard applications + audit logs into Supabase:
+
+```bash
+SUPABASE_URL=https://<project-ref>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key> \
+npm run seed:demo
+```
+
+Optional role mappings (if you already know auth user UUIDs):
+
+```bash
+SUPABASE_URL=https://<project-ref>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key> \
+DEMO_ADMIN_USER_ID=<admin-user-uuid> \
+DEMO_USER_USER_ID=<user-user-uuid> \
+npm run seed:demo
+```
