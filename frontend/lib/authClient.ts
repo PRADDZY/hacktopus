@@ -30,6 +30,20 @@ type ProviderProfile = {
   user: Record<string, unknown> | null;
 };
 
+export type PasskeyFactorStatus = 'verified' | 'unverified';
+
+export type PasskeyFactor = {
+  id: string;
+  friendlyName: string;
+  status: PasskeyFactorStatus;
+  createdAt: string | null;
+};
+
+export type AuthAssuranceLevel = {
+  currentLevel: string | null;
+  nextLevel: string | null;
+};
+
 type Credentials = {
   email: string;
   password: string;
@@ -127,6 +141,186 @@ const getSupabaseClient = async (): Promise<SupabaseClient | null> => {
     supabaseClientPromise = createSupabaseClient();
   }
   return supabaseClientPromise;
+};
+
+const hasWebAuthnSupport = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.PublicKeyCredential !== 'undefined' &&
+  typeof navigator !== 'undefined' &&
+  !!navigator.credentials;
+
+const normalizePasskeyName = (value: string | undefined): string => {
+  const trimmed = value?.trim();
+  if (trimmed) {
+    return trimmed.slice(0, 80);
+  }
+  const stamp = new Date().toISOString().replace(/[^\d]/g, '').slice(0, 12);
+  return `FairLens Passkey ${stamp}`;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+};
+
+const asString = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+
+export const isPasskeySupported = (): boolean => getAuthProvider() === 'supabase' && hasWebAuthnSupport();
+
+const getSupabaseClientOrThrow = async (): Promise<SupabaseClient> => {
+  const client = await getSupabaseClient();
+  if (!client) {
+    throw new Error('Supabase auth is not configured');
+  }
+  return client;
+};
+
+type WebAuthnResult = {
+  error: { message?: string } | null;
+};
+
+type SupabaseWebAuthnApi = {
+  register: (params: { friendlyName: string }) => Promise<WebAuthnResult>;
+  authenticate: (params: { factorId: string }) => Promise<WebAuthnResult>;
+};
+
+const getSupabaseWebAuthnApi = (client: SupabaseClient): SupabaseWebAuthnApi => {
+  const auth = client.auth as unknown as { webauthn?: SupabaseWebAuthnApi };
+  const api = auth.webauthn;
+  if (!api) {
+    throw new Error('Supabase WebAuthn API is unavailable in this SDK build');
+  }
+  return api;
+};
+
+export const listPasskeys = async (): Promise<PasskeyFactor[]> => {
+  if (getAuthProvider() !== 'supabase') {
+    return [];
+  }
+
+  const client = await getSupabaseClientOrThrow();
+  const { data, error } = await client.auth.mfa.listFactors();
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const payload = asRecord(data) ?? {};
+  const all = Array.isArray(payload.all) ? payload.all : [];
+  const webauthn = Array.isArray(payload.webauthn) ? payload.webauthn : [];
+  const source = all.length > 0 ? all : webauthn;
+
+  const factors: PasskeyFactor[] = [];
+  for (const item of source) {
+    const row = asRecord(item);
+    if (!row) {
+      continue;
+    }
+
+    const factorType = asString(row.factor_type) ?? 'webauthn';
+    if (factorType.toLowerCase() !== 'webauthn') {
+      continue;
+    }
+
+    const id = asString(row.id);
+    if (!id) {
+      continue;
+    }
+
+    const statusValue = (asString(row.status) ?? 'unverified').toLowerCase();
+    const status: PasskeyFactorStatus = statusValue === 'verified' ? 'verified' : 'unverified';
+    const friendlyName = asString(row.friendly_name) ?? `Passkey ${id.slice(0, 8)}`;
+    const createdAt = asString(row.created_at);
+
+    factors.push({
+      id,
+      friendlyName,
+      status,
+      createdAt,
+    });
+  }
+
+  return factors;
+};
+
+export const registerPasskey = async (friendlyName?: string): Promise<void> => {
+  if (getAuthProvider() !== 'supabase') {
+    throw new Error('Passkeys are available only with Supabase auth');
+  }
+  if (!hasWebAuthnSupport()) {
+    throw new Error('This browser does not support passkeys');
+  }
+
+  const client = await getSupabaseClientOrThrow();
+  const webauthn = getSupabaseWebAuthnApi(client);
+  const { error } = await webauthn.register({
+    friendlyName: normalizePasskeyName(friendlyName),
+  });
+  if (error) {
+    throw new Error(error.message ?? 'Passkey registration failed');
+  }
+};
+
+export const authenticateWithPasskey = async (factorId: string): Promise<void> => {
+  if (getAuthProvider() !== 'supabase') {
+    throw new Error('Passkeys are available only with Supabase auth');
+  }
+  if (!hasWebAuthnSupport()) {
+    throw new Error('This browser does not support passkeys');
+  }
+
+  const normalizedFactorId = factorId.trim();
+  if (!normalizedFactorId) {
+    throw new Error('Passkey factor id is required');
+  }
+
+  const client = await getSupabaseClientOrThrow();
+  const webauthn = getSupabaseWebAuthnApi(client);
+  const { error } = await webauthn.authenticate({
+    factorId: normalizedFactorId,
+  });
+  if (error) {
+    throw new Error(error.message ?? 'Passkey verification failed');
+  }
+};
+
+export const removePasskey = async (factorId: string): Promise<void> => {
+  if (getAuthProvider() !== 'supabase') {
+    throw new Error('Passkeys are available only with Supabase auth');
+  }
+
+  const normalizedFactorId = factorId.trim();
+  if (!normalizedFactorId) {
+    throw new Error('Passkey factor id is required');
+  }
+
+  const client = await getSupabaseClientOrThrow();
+  const { error } = await client.auth.mfa.unenroll({ factorId: normalizedFactorId });
+  if (error) {
+    throw new Error(error.message);
+  }
+};
+
+export const getAuthAssuranceLevel = async (): Promise<AuthAssuranceLevel> => {
+  if (getAuthProvider() !== 'supabase') {
+    return {
+      currentLevel: null,
+      nextLevel: null,
+    };
+  }
+
+  const client = await getSupabaseClientOrThrow();
+  const { data, error } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    currentLevel: data.currentLevel,
+    nextLevel: data.nextLevel,
+  };
 };
 
 export const beginAuthFlow = async (options: AuthFlowOptions = {}): Promise<void> => {

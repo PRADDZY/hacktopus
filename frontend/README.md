@@ -53,6 +53,7 @@ Dashboard:
 - AI assistant widget is available in both shop and dashboard layouts via Worker `POST /v1/assistant/query`.
 - Checkout EMI flow is statement-first via Worker `/v1/documents` + `/v1/assessments`.
 - Dashboard stats/logs and decision review use Worker `/v1/*` routes.
+- Profile route includes passkey management (`WebAuthn`) for Supabase auth users.
 
 ## Shared Types
 

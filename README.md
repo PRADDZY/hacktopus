@@ -161,6 +161,10 @@ Frontend
 - `npm run test`
 - `npm run test:e2e` (first run may require `npx playwright install`)
 
+Auth Notes
+- Supabase auth is primary for user/admin sign-in.
+- Passkey (WebAuthn) enrollment and verification is available from frontend profile page for authenticated Supabase users.
+
 Worker API
 - `cd worker-api`
 - `npm test` (in restricted sandboxes, use `npx tsc --noEmit` when process spawning is blocked)

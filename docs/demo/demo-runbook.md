@@ -81,12 +81,13 @@ npm run seed:demo
 ## 4) Demo Script (Judge Flow)
 
 1. User signup/login (Supabase auth).
-2. Shop -> add product -> checkout.
-3. Upload statement and run EMI eligibility.
-4. Show assessment decision + risk percentage.
-5. Place order and show order history.
-6. Admin login -> dashboard -> review logs/requests.
-7. Trigger assistant widget question and show guidance.
+2. (Optional) Profile -> register passkey and verify factor.
+3. Shop -> add product -> checkout.
+4. Upload statement and run EMI eligibility.
+5. Show assessment decision + risk percentage.
+6. Place order and show order history.
+7. Admin login -> dashboard -> review logs/requests.
+8. Trigger assistant widget question and show guidance.
 
 ## 5) Live Fallback Plan
 
