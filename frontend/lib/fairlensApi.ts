@@ -13,8 +13,26 @@ import {
 } from '@/types';
 import { getAccessToken } from '@/lib/authClient';
 
-const backendBaseUrl =
-  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') ?? 'http://localhost:10000';
+const apiBaseUrl =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
+  process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, '') ??
+  'http://localhost:10000';
+const riskApiBaseUrl =
+  process.env.NEXT_PUBLIC_RISK_API_URL?.replace(/\/$/, '') ?? apiBaseUrl;
+
+type ApiEnvelopeError = {
+  code?: string;
+  message?: string;
+};
+
+type ApiEnvelope<T> = {
+  data: T | null;
+  error: ApiEnvelopeError | null;
+  meta?: {
+    requestId?: string;
+    timestamp?: string;
+  };
+};
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
@@ -114,11 +132,31 @@ const parseError = async (response: Response): Promise<string> => {
   }
 
   try {
-    const data = JSON.parse(text) as { detail?: string };
-    return data?.detail ?? `Request failed (${response.status})`;
+    const data = JSON.parse(text) as
+      | { detail?: string; message?: string; error?: ApiEnvelopeError | null }
+      | ApiEnvelope<unknown>;
+    if (typeof (data as { detail?: string }).detail === 'string') {
+      return (data as { detail: string }).detail;
+    }
+    if ((data as { error?: ApiEnvelopeError | null }).error?.message) {
+      return (data as { error: ApiEnvelopeError }).error.message ?? `Request failed (${response.status})`;
+    }
+    if (typeof (data as { message?: string }).message === 'string') {
+      return (data as { message: string }).message;
+    }
+    return `Request failed (${response.status})`;
   } catch {
     return `Request failed (${response.status})`;
   }
+};
+
+const isApiEnvelope = <T>(value: unknown): value is ApiEnvelope<T> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return Object.prototype.hasOwnProperty.call(record, 'data') && Object.prototype.hasOwnProperty.call(record, 'error');
 };
 
 const parseJsonResponse = async <T>(response: Response, label: string): Promise<T> => {
@@ -126,16 +164,30 @@ const parseJsonResponse = async <T>(response: Response, label: string): Promise<
   if (!text.trim()) {
     throw new Error(`${label} returned empty response (${response.status})`);
   }
+
+  let parsed: unknown;
   try {
-    return JSON.parse(text) as T;
+    parsed = JSON.parse(text);
   } catch {
     throw new Error(`${label} returned invalid JSON (${response.status})`);
   }
+
+  if (!isApiEnvelope<T>(parsed)) {
+    return parsed as T;
+  }
+
+  if (parsed.error) {
+    throw new Error(parsed.error.message || `${label} failed (${response.status})`);
+  }
+  if (parsed.data === null) {
+    throw new Error(`${label} returned empty data (${response.status})`);
+  }
+  return parsed.data;
 };
 
 export async function predictBNPLRisk(payload: FairlensPredictRequest): Promise<FairlensPredictResponse> {
   const headers = await buildHeaders({ isMutation: true, includeJson: true });
-  const response = await fetch(`${backendBaseUrl}/predict`, {
+  const response = await fetch(`${riskApiBaseUrl}/predict`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -157,7 +209,7 @@ export async function createApplication(
     includeJson: true,
     idempotencyKey,
   });
-  const response = await fetch(`${backendBaseUrl}/v1/applications`, {
+  const response = await fetch(`${apiBaseUrl}/v1/applications`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -171,7 +223,7 @@ export async function createApplication(
 
 export async function fetchMyApplications(page = 1, limit = 20): Promise<BackendApplicationsResponse> {
   const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${backendBaseUrl}/v1/applications/me?page=${page}&limit=${limit}`, {
+  const response = await fetch(`${apiBaseUrl}/v1/applications/me?page=${page}&limit=${limit}`, {
     cache: 'no-store',
     headers,
   });
@@ -204,7 +256,7 @@ export async function fetchAdminApplications(
   }
 
   const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${backendBaseUrl}/v1/admin/applications?${params.toString()}`, {
+  const response = await fetch(`${apiBaseUrl}/v1/admin/applications?${params.toString()}`, {
     cache: 'no-store',
     headers,
   });
@@ -216,7 +268,7 @@ export async function fetchAdminApplications(
 
 export async function fetchAdminApplication(applicationUuid: string): Promise<BackendApplicationItem> {
   const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${backendBaseUrl}/v1/admin/applications/${applicationUuid}`, {
+  const response = await fetch(`${apiBaseUrl}/v1/admin/applications/${applicationUuid}`, {
     cache: 'no-store',
     headers,
   });
@@ -231,7 +283,7 @@ export async function overrideAdminApplication(
   payload: AdminOverrideRequest
 ): Promise<BackendApplicationItem> {
   const headers = await buildHeaders({ isMutation: true, includeJson: true });
-  const response = await fetch(`${backendBaseUrl}/v1/admin/applications/${applicationUuid}/override`, {
+  const response = await fetch(`${apiBaseUrl}/v1/admin/applications/${applicationUuid}/override`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -244,7 +296,7 @@ export async function overrideAdminApplication(
 
 export async function fetchStats(): Promise<BackendStats> {
   const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${backendBaseUrl}/stats`, { cache: 'no-store', headers });
+  const response = await fetch(`${apiBaseUrl}/v1/stats`, { cache: 'no-store', headers });
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
@@ -288,7 +340,7 @@ export async function fetchAuditLogs(
   }
 
   const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${backendBaseUrl}/audit-logs?${params.toString()}`, {
+  const response = await fetch(`${apiBaseUrl}/v1/audit-logs?${params.toString()}`, {
     cache: 'no-store',
     headers,
   });

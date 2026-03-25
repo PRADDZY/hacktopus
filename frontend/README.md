@@ -15,7 +15,9 @@ npm run dev
 Set environment variables:
 
 ```
+NEXT_PUBLIC_API_URL=http://localhost:8787
 NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
+NEXT_PUBLIC_RISK_API_URL=http://localhost:10000
 NEXT_PUBLIC_AUTH0_DOMAIN=<tenant>.auth0.com
 NEXT_PUBLIC_AUTH0_CLIENT_ID=<client-id>
 NEXT_PUBLIC_AUTH0_AUDIENCE=<api-audience>
@@ -46,11 +48,11 @@ Dashboard:
 
 ## Notes
 
-- Dashboard uses live backend data only.
+- Dashboard uses live Worker API data for applications, stats, and audit flows.
 - When Auth0 env vars are configured, dashboard routes require admin role from token claims.
 - API calls include `Authorization`, `X-Request-Id`, and `Idempotency-Key` headers when applicable.
-- Checkout EMI flow creates backend-owned application records via `/v1/applications`.
-- Dashboard decision review/override uses `/v1/admin/applications*` routes.
+- Checkout EMI flow creates Worker-owned application records via `/v1/applications`.
+- Dashboard stats/logs and decision review use Worker `/v1/*` routes.
 
 ## Shared Types
 

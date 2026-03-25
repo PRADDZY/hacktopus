@@ -65,7 +65,9 @@ npm run dev
 Environment variables (frontend/.env.example):
 
 ```
+NEXT_PUBLIC_API_URL=http://localhost:8787
 NEXT_PUBLIC_BACKEND_URL=http://localhost:10000
+NEXT_PUBLIC_RISK_API_URL=http://localhost:10000
 NEXT_PUBLIC_AUTH0_DOMAIN=<tenant>.auth0.com
 NEXT_PUBLIC_AUTH0_CLIENT_ID=<client-id>
 NEXT_PUBLIC_AUTH0_AUDIENCE=<api-audience>
@@ -82,15 +84,21 @@ npm run dev
 
 ## Key Endpoints
 
-Backend
-- `POST /predict`
+Worker API (primary app domain)
 - `POST /v1/applications`
 - `GET /v1/applications/me`
 - `GET /v1/admin/applications`
+- `GET /v1/admin/applications/{application_uuid}`
 - `POST /v1/admin/applications/{application_uuid}/override`
-- `GET /stats`
-- `GET /logs`
-- `GET /audit-logs`
+- `GET /v1/stats`
+- `GET /v1/logs`
+- `GET /v1/audit-logs`
+- `POST /v1/documents`
+- `POST /v1/assessments`
+- `GET /health`
+
+Backend (transition / compatibility)
+- `POST /predict`
 - `GET /health`
 
 ML Service

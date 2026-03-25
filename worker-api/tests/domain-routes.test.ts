@@ -890,4 +890,339 @@ describe('Worker domain routes', () => {
     expect(payload.data.final_decision).toBe('Approve');
     expect(payload.data.decision_source).toBe('manual_override');
   });
+
+  it('creates checkout application and writes audit log', async () => {
+    const token = await signToken(['user']);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = (init?.method || 'GET').toUpperCase();
+
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'POST') {
+        return jsonResponse([
+          {
+            id: 'idem-app-1',
+            owner_sub: 'auth0|user-123',
+            route_key: 'post:/v1/applications',
+            idempotency_key: 'idem-app-1',
+            request_hash: 'hash-app-1',
+            state: 'in_progress'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/transactions') && method === 'POST') {
+        return jsonResponse([
+          {
+            id: 91,
+            application_uuid: 'app-123',
+            user_sub: 'auth0|user-123',
+            idempotency_key: 'idem-app-1',
+            order_amount_inr: 45000,
+            tenure_months: 6,
+            monthly_income_inr: 90000,
+            bank: 'HDFC Bank',
+            card_type: 'credit',
+            card_last_four_masked: '****1234',
+            avg_monthly_inflow: 90000,
+            inflow_volatility: 0.22,
+            avg_monthly_outflow: 51000,
+            min_balance_30d: 37200,
+            neg_balance_days_30d: 0,
+            purchase_to_inflow_ratio: 0.5,
+            total_burden_ratio: 0.65,
+            buffer_ratio: 0.4133,
+            stress_index: 0.4565,
+            risk_probability: 0.31,
+            model_source: 'worker_fallback',
+            auto_decision: 'Approve',
+            final_decision: 'Approve',
+            decision_source: 'auto',
+            reviewed_by: null,
+            reviewed_at: null,
+            override_reason: null,
+            decision: 'Approve',
+            created_at: '2026-03-25T12:00:00Z',
+            updated_at: '2026-03-25T12:00:00Z'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/audit_logs') && method === 'POST') {
+        return jsonResponse([{ id: 33 }], 201);
+      }
+
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'PATCH') {
+        return jsonResponse([{ id: 'idem-app-1', state: 'completed', response_status: 201 }]);
+      }
+
+      return jsonResponse({ message: `Unexpected request ${method} ${url.pathname}` }, 500);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/applications',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': 'idem-app-1',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          order_amount_inr: 45000,
+          tenure_months: 6,
+          bank: 'HDFC Bank',
+          monthly_income_inr: 90000,
+          card_type: 'credit',
+          card_last_four: '1234'
+        })
+      },
+      createEnv()
+    );
+
+    expect(response.status).toBe(201);
+    const payload = (await response.json()) as {
+      error: unknown;
+      data: { application_uuid: string; final_decision: string; card_last_four_masked: string };
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.application_uuid).toBe('app-123');
+    expect(payload.data.final_decision).toBe('Approve');
+    expect(payload.data.card_last_four_masked).toBe('****1234');
+  });
+
+  it('lists admin applications with status and search filters', async () => {
+    const token = await signToken(['admin'], 'auth0|admin-1', 'admin@example.com');
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toContain('/transactions');
+      expect(url.searchParams.get('final_decision')).toBe('eq.Approve');
+      expect(url.searchParams.get('or')).toContain('application_uuid.ilike.*app-123*');
+      return new Response(
+        JSON.stringify([
+          {
+            id: 91,
+            application_uuid: 'app-123',
+            user_sub: 'auth0|user-123',
+            avg_monthly_inflow: 90000,
+            inflow_volatility: 0.22,
+            avg_monthly_outflow: 51000,
+            min_balance_30d: 37200,
+            neg_balance_days_30d: 0,
+            purchase_to_inflow_ratio: 0.5,
+            total_burden_ratio: 0.65,
+            buffer_ratio: 0.4133,
+            stress_index: 0.4565,
+            risk_probability: 0.31,
+            auto_decision: 'Approve',
+            final_decision: 'Approve',
+            decision_source: 'auto',
+            decision: 'Approve',
+            reviewed_by: null,
+            reviewed_at: null,
+            override_reason: null,
+            created_at: '2026-03-25T12:00:00Z',
+            updated_at: '2026-03-25T12:00:00Z'
+          }
+        ]),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Range': '0-0/1'
+          }
+        }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/admin/applications?page=1&limit=20&status=Approve&search=app-123',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
+      createEnv()
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      data: { total: number; items: Array<{ application_uuid: string }> };
+      error: unknown;
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.total).toBe(1);
+    expect(payload.data.items[0]?.application_uuid).toBe('app-123');
+  });
+
+  it('overrides application decision as admin', async () => {
+    const token = await signToken(['admin'], 'auth0|admin-1', 'admin@example.com');
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = (init?.method || 'GET').toUpperCase();
+
+      if (url.pathname.endsWith('/transactions') && method === 'GET') {
+        return jsonResponse([
+          {
+            id: 91,
+            application_uuid: 'app-123',
+            user_sub: 'auth0|user-123',
+            avg_monthly_inflow: 90000,
+            inflow_volatility: 0.22,
+            avg_monthly_outflow: 51000,
+            min_balance_30d: 37200,
+            neg_balance_days_30d: 0,
+            purchase_to_inflow_ratio: 0.5,
+            total_burden_ratio: 0.65,
+            buffer_ratio: 0.4133,
+            stress_index: 0.4565,
+            risk_probability: 0.31,
+            auto_decision: 'Decline',
+            final_decision: 'Decline',
+            decision_source: 'auto',
+            decision: 'Decline',
+            reviewed_by: null,
+            reviewed_at: null,
+            override_reason: null,
+            created_at: '2026-03-25T12:00:00Z',
+            updated_at: '2026-03-25T12:00:00Z'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/transactions') && method === 'PATCH') {
+        return jsonResponse([
+          {
+            id: 91,
+            application_uuid: 'app-123',
+            user_sub: 'auth0|user-123',
+            avg_monthly_inflow: 90000,
+            inflow_volatility: 0.22,
+            avg_monthly_outflow: 51000,
+            min_balance_30d: 37200,
+            neg_balance_days_30d: 0,
+            purchase_to_inflow_ratio: 0.5,
+            total_burden_ratio: 0.65,
+            buffer_ratio: 0.4133,
+            stress_index: 0.4565,
+            risk_probability: 0.31,
+            auto_decision: 'Decline',
+            final_decision: 'Approve',
+            decision_source: 'manual_override',
+            decision: 'Approve',
+            reviewed_by: 'admin@example.com',
+            reviewed_at: '2026-03-25T12:10:00Z',
+            override_reason: 'manual review',
+            created_at: '2026-03-25T12:00:00Z',
+            updated_at: '2026-03-25T12:10:00Z'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/audit_logs') && method === 'POST') {
+        return jsonResponse([{ id: 34 }], 201);
+      }
+
+      return jsonResponse({ message: `Unexpected request ${method} ${url.pathname}` }, 500);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/admin/applications/app-123/override',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          decision: 'Approve',
+          reason: 'manual review'
+        })
+      },
+      createEnv()
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      error: unknown;
+      data: { final_decision: string; decision_source: string; reviewed_by: string };
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.final_decision).toBe('Approve');
+    expect(payload.data.decision_source).toBe('manual_override');
+    expect(payload.data.reviewed_by).toBe('admin@example.com');
+  });
+
+  it('returns stats with risk distribution', async () => {
+    const token = await signToken(['admin'], 'auth0|admin-1', 'admin@example.com');
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const decision = url.searchParams.get('decision');
+      const risk = url.searchParams.get('risk_probability');
+      const andExpr = url.searchParams.get('and');
+
+      if (decision === 'eq.Approve') {
+        return new Response(JSON.stringify([{ id: 1 }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Content-Range': '0-0/60' }
+        });
+      }
+      if (risk === 'lt.0.33') {
+        return new Response(JSON.stringify([{ id: 1 }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Content-Range': '0-0/20' }
+        });
+      }
+      if (andExpr) {
+        return new Response(JSON.stringify([{ id: 1 }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Content-Range': '0-0/50' }
+        });
+      }
+      if (risk === 'gte.0.66') {
+        return new Response(JSON.stringify([{ id: 1 }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Content-Range': '0-0/30' }
+        });
+      }
+
+      return new Response(JSON.stringify([{ id: 1 }]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Content-Range': '0-0/100' }
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/stats',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
+      createEnv()
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      error: unknown;
+      data: {
+        total_predictions: number;
+        approval_rate: number;
+        decline_rate: number;
+        risk_score_distribution: { low: number; medium: number; high: number };
+      };
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.total_predictions).toBe(100);
+    expect(payload.data.approval_rate).toBe(0.6);
+    expect(payload.data.decline_rate).toBe(0.4);
+    expect(payload.data.risk_score_distribution).toEqual({ low: 20, medium: 50, high: 30 });
+  });
 });

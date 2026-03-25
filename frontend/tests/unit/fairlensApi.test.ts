@@ -111,6 +111,28 @@ export const run = async () => {
   }
 
   {
+    const statsFixture = {
+      total_predictions: 8,
+      approval_rate: 0.625,
+      decline_rate: 0.375,
+      risk_score_distribution: { low: 2, medium: 4, high: 2 },
+    };
+
+    await withMockedFetch(
+      async () =>
+        jsonResponse({
+          data: statsFixture,
+          error: null,
+          meta: { requestId: 'req-1', timestamp: '2026-03-25T00:00:00.000Z' },
+        }),
+      async () => {
+        const stats = await fetchStats();
+        assert.deepEqual(stats, statsFixture);
+      }
+    );
+  }
+
+  {
     await withMockedFetch(async () => new Response('', { status: 200 }), async () => {
       await assert.rejects(fetchStats(), /empty response/i);
     });
@@ -152,6 +174,25 @@ export const run = async () => {
         ),
       async () => {
         await assert.rejects(fetchStats(), /Backend unavailable/);
+      }
+    );
+  }
+
+  {
+    await withMockedFetch(
+      async () =>
+        jsonResponse(
+          {
+            error: {
+              code: 'supabase_error',
+              message: 'Service unavailable',
+            },
+            data: null,
+          },
+          503
+        ),
+      async () => {
+        await assert.rejects(fetchStats(), /Service unavailable/);
       }
     );
   }

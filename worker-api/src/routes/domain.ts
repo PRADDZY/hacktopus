@@ -50,6 +50,50 @@ type AssessmentRecord = {
   override_reason?: string | null;
 };
 
+type TransactionRecord = {
+  id: number;
+  application_uuid: string;
+  user_sub: string | null;
+  idempotency_key: string | null;
+  order_amount_inr: number | null;
+  tenure_months: number | null;
+  monthly_income_inr: number | null;
+  bank: string | null;
+  card_type: string | null;
+  card_last_four_masked: string | null;
+  avg_monthly_inflow: number;
+  inflow_volatility: number;
+  avg_monthly_outflow: number;
+  min_balance_30d: number;
+  neg_balance_days_30d: number;
+  purchase_to_inflow_ratio: number;
+  total_burden_ratio: number;
+  buffer_ratio: number;
+  stress_index: number;
+  risk_probability: number;
+  model_source: string | null;
+  auto_decision: Decision | null;
+  final_decision: Decision | null;
+  decision_source: DecisionSource | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  override_reason: string | null;
+  decision: Decision;
+  created_at: string;
+  updated_at: string;
+};
+
+type AuditLogRecord = {
+  id: number;
+  actor: string;
+  action: string;
+  details: string;
+  status: string;
+  entity_id: string | null;
+  source: string | null;
+  created_at: string;
+};
+
 type ExtractionJobRecord = {
   id: string;
   document_id: string;
@@ -124,7 +168,7 @@ const parseLimit = (value: string | undefined): number => {
   if (!Number.isFinite(parsed) || parsed < 1) {
     return 20;
   }
-  return Math.min(100, Math.floor(parsed));
+  return Math.min(200, Math.floor(parsed));
 };
 
 const getThreshold = (env: AppEnv['Bindings']): number => {
@@ -192,6 +236,50 @@ const sanitizeSearchTerm = (value: string | undefined): string | null => {
 
   const sanitized = raw.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
   return sanitized || null;
+};
+
+const toIsoNow = (): string => new Date().toISOString();
+
+const createApplicationUuid = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `app-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+};
+
+const maskCardLastFour = (value: string): string => `****${value.slice(-4)}`;
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
+const toPositiveNumber = (value: unknown): number | null => {
+  const parsed = toFiniteNumber(value);
+  if (parsed === null || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+};
+
+const toIntegerInRange = (value: unknown, min: number, max: number): number | null => {
+  const parsed = toFiniteNumber(value);
+  if (parsed === null) {
+    return null;
+  }
+  const asInt = Math.floor(parsed);
+  if (asInt < min || asInt > max) {
+    return null;
+  }
+  return asInt;
 };
 
 const replayIdempotentResult = (
@@ -421,10 +509,17 @@ const computeHeuristicRiskProbability = (payload: Record<string, unknown>): numb
 const toDecision = (riskProbability: number, threshold: number): Decision =>
   riskProbability >= threshold ? 'Decline' : 'Approve';
 
+type ScoringOutcome = {
+  riskProbability: number;
+  decision: Decision;
+  modelVersion: string;
+  source: string;
+};
+
 const scoreAssessment = async (
   c: Context<AppEnv>,
   rawPayload: Record<string, unknown>
-): Promise<{ riskProbability: number; decision: Decision; modelVersion: string }> => {
+): Promise<ScoringOutcome> => {
   const normalizedPayload = normalizeRiskFeatures(rawPayload);
   const endpoint = getModelScoringEndpoint(c.env);
 
@@ -454,7 +549,8 @@ const scoreAssessment = async (
         return {
           riskProbability: Number(riskProbability.toFixed(6)),
           decision,
-          modelVersion
+          modelVersion,
+          source: 'ml_service'
         };
       }
     } catch {
@@ -466,7 +562,122 @@ const scoreAssessment = async (
   return {
     riskProbability: fallbackRisk,
     decision: toDecision(fallbackRisk, getThreshold(c.env)),
-    modelVersion: 'worker-heuristic-fallback-v2'
+    modelVersion: 'worker-heuristic-fallback-v2',
+    source: 'worker_fallback'
+  };
+};
+
+type CreateApplicationInput = {
+  orderAmountInr: number;
+  tenureMonths: number;
+  bank: string;
+  monthlyIncomeInr: number;
+  cardType: 'credit' | 'fairlens';
+  cardLastFour: string;
+  metadata: Record<string, unknown> | null;
+};
+
+const parseCreateApplicationInput = (
+  body: Record<string, unknown>
+): { value: CreateApplicationInput | null; error: string | null } => {
+  const orderAmountInr = toPositiveNumber(body.order_amount_inr);
+  if (orderAmountInr === null) {
+    return { value: null, error: 'order_amount_inr must be a positive number' };
+  }
+
+  const tenureMonths = toIntegerInRange(body.tenure_months, 1, 36);
+  if (tenureMonths === null) {
+    return { value: null, error: 'tenure_months must be an integer between 1 and 36' };
+  }
+
+  const bank = asNonEmpty(body.bank);
+  if (!bank || bank.length < 2 || bank.length > 120) {
+    return { value: null, error: 'bank must be between 2 and 120 characters' };
+  }
+
+  const monthlyIncomeInr = toPositiveNumber(body.monthly_income_inr);
+  if (monthlyIncomeInr === null) {
+    return { value: null, error: 'monthly_income_inr must be a positive number' };
+  }
+
+  const cardType = asNonEmpty(body.card_type);
+  if (cardType !== 'credit' && cardType !== 'fairlens') {
+    return { value: null, error: 'card_type must be credit or fairlens' };
+  }
+
+  const cardLastFour = asNonEmpty(body.card_last_four);
+  if (!cardLastFour || !/^\d{4}$/.test(cardLastFour)) {
+    return { value: null, error: 'card_last_four must contain exactly 4 digits' };
+  }
+
+  const metadata = asRecord(body.metadata);
+
+  return {
+    value: {
+      orderAmountInr: Number(orderAmountInr.toFixed(6)),
+      tenureMonths,
+      bank,
+      monthlyIncomeInr: Number(monthlyIncomeInr.toFixed(6)),
+      cardType,
+      cardLastFour,
+      metadata
+    },
+    error: null
+  };
+};
+
+const deriveCheckoutRiskPayload = (input: CreateApplicationInput): Record<string, unknown> => {
+  const monthlyEmi = Math.ceil(input.orderAmountInr / input.tenureMonths);
+  const safeInflow = Math.max(input.monthlyIncomeInr, 1);
+  const purchaseToInflowRatio = input.orderAmountInr / safeInflow;
+  const avgMonthlyOutflow = Math.min(safeInflow * 0.95, safeInflow * 0.5 + monthlyEmi);
+  const avgBalance30d = Math.max(0, safeInflow - avgMonthlyOutflow);
+  const minBalance30d = Math.max(0, safeInflow - avgMonthlyOutflow - monthlyEmi * 0.2);
+  const inflowVolatility = Math.min(1, Math.max(0.01, 0.12 + purchaseToInflowRatio * 0.2));
+  const outflowVolatility = Math.min(1, Math.max(0.02, 0.16 + purchaseToInflowRatio * 0.15));
+  const negBalanceDays30d = minBalance30d === 0 ? 4 : minBalance30d < safeInflow * 0.08 ? 2 : 0;
+  const totalBurdenRatio = Math.min(1, (avgMonthlyOutflow + monthlyEmi) / safeInflow);
+  const installmentToInflowRatio = Math.min(1, monthlyEmi / safeInflow);
+  const bufferRatio = Math.max(0, minBalance30d / safeInflow);
+  const stressIndex = Math.min(1, inflowVolatility * 0.45 + totalBurdenRatio * 0.55);
+  const essentialSpendRatio = Math.min(1, Math.max(0.1, avgMonthlyOutflow / safeInflow));
+  const activeLoanCount = totalBurdenRatio > 0.65 ? 2 : 1;
+
+  return {
+    segment: 'unknown',
+    monthly_inflow: Number(safeInflow.toFixed(6)),
+    monthly_outflow: Number(avgMonthlyOutflow.toFixed(6)),
+    inflow_volatility_90d: Number(inflowVolatility.toFixed(6)),
+    outflow_volatility_90d: Number(outflowVolatility.toFixed(6)),
+    deposit_count_30d: 4,
+    days_since_last_income: 7,
+    avg_balance_30d: Number(avgBalance30d.toFixed(6)),
+    min_balance_30d: Number(minBalance30d.toFixed(6)),
+    negative_balance_days_30d: negBalanceDays30d,
+    essential_spend_ratio: Number(essentialSpendRatio.toFixed(6)),
+    active_loan_count: activeLoanCount,
+    monthly_installment_burden: Number(monthlyEmi.toFixed(6)),
+    purchase_amount: Number(input.orderAmountInr.toFixed(6)),
+    tenure_weeks: input.tenureMonths * 4,
+    purchase_to_inflow_ratio: Number(purchaseToInflowRatio.toFixed(6)),
+    installment_to_inflow_ratio: Number(installmentToInflowRatio.toFixed(6)),
+    total_burden_ratio: Number(totalBurdenRatio.toFixed(6)),
+    buffer_ratio: Number(bufferRatio.toFixed(6)),
+    stress_index: Number(stressIndex.toFixed(6))
+  };
+};
+
+const normalizeTransaction = (transaction: TransactionRecord): TransactionRecord => {
+  const autoDecision = transaction.auto_decision ?? transaction.decision;
+  const finalDecision = transaction.final_decision ?? transaction.decision;
+  const decisionSource = transaction.decision_source ?? 'auto';
+
+  return {
+    ...transaction,
+    auto_decision: autoDecision,
+    final_decision: finalDecision,
+    decision_source: decisionSource,
+    decision: finalDecision
   };
 };
 
@@ -551,6 +762,468 @@ const dispatchExtractionToModal = async ({
     };
   }
 };
+
+routes.post('/applications', requireUserAuth, async (c) => {
+  const user = c.get('authUser');
+  if (!user.subject) {
+    return failure(c, { code: 'unauthorized', message: 'Authentication required' }, 401);
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await c.req.json()) as Record<string, unknown>;
+  } catch {
+    return failure(c, { code: 'invalid_request', message: 'Invalid JSON body' }, 400);
+  }
+
+  const parsed = parseCreateApplicationInput(body);
+  if (!parsed.value) {
+    return failure(c, { code: 'invalid_request', message: parsed.error ?? 'Invalid application payload' }, 400);
+  }
+
+  const idempotencyKey = readIdempotencyKey(c.req.header('Idempotency-Key'));
+  const routeKey = 'post:/v1/applications';
+  const requestHash = idempotencyKey
+    ? await createIdempotencyHash({
+        routeKey,
+        ownerSub: user.subject,
+        payload: body
+      })
+    : null;
+
+  let idempotencyRecordId: string | null = null;
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+
+    if (idempotencyKey && requestHash) {
+      const idempotency = await beginIdempotency({
+        supabase,
+        env: c.env,
+        ownerSub: user.subject,
+        routeKey,
+        idempotencyKey,
+        requestHash
+      });
+
+      if (idempotency.kind === 'conflict') {
+        return failure(
+          c,
+          {
+            code: 'idempotency_conflict',
+            message: 'Idempotency-Key already used with a different request payload'
+          },
+          409
+        );
+      }
+      if (idempotency.kind === 'in_progress') {
+        return failure(
+          c,
+          {
+            code: 'idempotency_in_progress',
+            message: 'A request with this Idempotency-Key is already being processed'
+          },
+          409
+        );
+      }
+      if (idempotency.kind === 'replay') {
+        return replayIdempotentResult(c, idempotency);
+      }
+      idempotencyRecordId = idempotency.recordId;
+    }
+
+    const riskPayload = deriveCheckoutRiskPayload(parsed.value);
+    const scoring = await scoreAssessment(c, riskPayload);
+    const applicationUuid = createApplicationUuid();
+
+    const transaction = await supabase.insertOne<TransactionRecord>('transactions', {
+      application_uuid: applicationUuid,
+      user_sub: user.subject,
+      idempotency_key: idempotencyKey ?? null,
+      order_amount_inr: parsed.value.orderAmountInr,
+      tenure_months: parsed.value.tenureMonths,
+      monthly_income_inr: parsed.value.monthlyIncomeInr,
+      bank: parsed.value.bank,
+      card_type: parsed.value.cardType,
+      card_last_four_masked: maskCardLastFour(parsed.value.cardLastFour),
+      avg_monthly_inflow: readNumber(riskPayload, ['monthly_inflow'], parsed.value.monthlyIncomeInr),
+      inflow_volatility: readNumber(riskPayload, ['inflow_volatility_90d'], 0.2),
+      avg_monthly_outflow: readNumber(riskPayload, ['monthly_outflow'], parsed.value.monthlyIncomeInr * 0.5),
+      min_balance_30d: readNumber(riskPayload, ['min_balance_30d'], 0),
+      neg_balance_days_30d: readInt(riskPayload, ['negative_balance_days_30d'], 0),
+      purchase_to_inflow_ratio: readNumber(riskPayload, ['purchase_to_inflow_ratio'], 0),
+      total_burden_ratio: readNumber(riskPayload, ['total_burden_ratio'], 0),
+      buffer_ratio: readNumber(riskPayload, ['buffer_ratio'], 0),
+      stress_index: readNumber(riskPayload, ['stress_index'], 0.5),
+      risk_probability: scoring.riskProbability,
+      model_source: scoring.source,
+      auto_decision: scoring.decision,
+      final_decision: scoring.decision,
+      decision_source: 'auto',
+      decision: scoring.decision,
+      updated_at: toIsoNow()
+    });
+
+    const actor = user.email ?? user.subject ?? 'Checkout User';
+    const metadataNote = parsed.value.metadata ? ' | metadata captured' : '';
+    await supabase.insertOne<AuditLogRecord>('audit_logs', {
+      actor,
+      action: 'Application scored',
+      details: `Decision ${scoring.decision} (risk ${scoring.riskProbability.toFixed(3)}) for APP-${applicationUuid}${metadataNote}`,
+      status: scoring.source === 'ml_service' ? 'success' : 'warning',
+      entity_id: String(transaction.id),
+      source: scoring.source
+    });
+
+    const responseData = normalizeTransaction(transaction);
+
+    if (idempotencyRecordId) {
+      await finalizeIdempotency({
+        supabase,
+        env: c.env,
+        recordId: idempotencyRecordId,
+        status: 201,
+        data: responseData,
+        error: null
+      });
+    }
+
+    return success(c, responseData, 201);
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      const status = toApiStatus(error.status);
+      const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
+      if (idempotencyRecordId && status < 500) {
+        const supabase = new SupabaseRestClient(c);
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, status);
+    }
+
+    return failure(c, { code: 'internal_error', message: 'Failed to create application' }, 500);
+  }
+});
+
+routes.get('/applications/me', requireUserAuth, async (c) => {
+  const user = c.get('authUser');
+  if (!user.subject) {
+    return failure(c, { code: 'unauthorized', message: 'Authentication required' }, 401);
+  }
+
+  const page = parsePage(c.req.query('page'));
+  const limit = parseLimit(c.req.query('limit'));
+  const offset = (page - 1) * limit;
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const { items, total } = await supabase.selectManyWithCount<TransactionRecord>('transactions', {
+      filters: { user_sub: user.subject },
+      order: 'created_at.desc',
+      limit,
+      offset
+    });
+
+    return success(
+      c,
+      {
+        page,
+        limit,
+        total,
+        total_pages: total === 0 ? 1 : Math.ceil(total / limit),
+        items: items.map(normalizeTransaction)
+      },
+      200
+    );
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to list user applications' }, 500);
+  }
+});
+
+routes.get('/admin/applications', requireAdminAuth, async (c) => {
+  const page = parsePage(c.req.query('page'));
+  const limit = parseLimit(c.req.query('limit'));
+  const offset = (page - 1) * limit;
+  const status = normalizeDecision(c.req.query('status'));
+  const search = sanitizeSearchTerm(c.req.query('search'));
+
+  const filters: QueryFilters = {};
+  if (status) {
+    filters.final_decision = status;
+  }
+
+  const query: SupabaseQueryParams = {};
+  if (search) {
+    const searchPattern = `*${search}*`;
+    query.or = `(application_uuid.ilike.${searchPattern},user_sub.ilike.${searchPattern},bank.ilike.${searchPattern},card_last_four_masked.ilike.${searchPattern})`;
+  }
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const { items, total } = await supabase.selectManyWithCount<TransactionRecord>('transactions', {
+      filters,
+      order: 'created_at.desc',
+      limit,
+      offset,
+      query
+    });
+
+    return success(
+      c,
+      {
+        page,
+        limit,
+        total,
+        total_pages: total === 0 ? 1 : Math.ceil(total / limit),
+        items: items.map(normalizeTransaction)
+      },
+      200
+    );
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to list admin applications' }, 500);
+  }
+});
+
+routes.get('/admin/applications/:applicationUuid', requireAdminAuth, async (c) => {
+  const applicationUuid = c.req.param('applicationUuid');
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const transaction = await supabase.selectOne<TransactionRecord>('transactions', {
+      application_uuid: applicationUuid
+    });
+    if (!transaction) {
+      return failure(c, { code: 'not_found', message: 'Application not found' }, 404);
+    }
+    return success(c, normalizeTransaction(transaction), 200);
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to fetch application' }, 500);
+  }
+});
+
+routes.post('/admin/applications/:applicationUuid/override', requireAdminAuth, async (c) => {
+  const user = c.get('authUser');
+  const applicationUuid = c.req.param('applicationUuid');
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await c.req.json()) as Record<string, unknown>;
+  } catch {
+    return failure(c, { code: 'invalid_request', message: 'Invalid JSON body' }, 400);
+  }
+
+  const decision = normalizeDecision(body.decision);
+  const reason = asNonEmpty(body.reason);
+  if (!decision || !reason || reason.length < 3 || reason.length > 500) {
+    return failure(c, { code: 'invalid_request', message: 'decision and reason are required' }, 400);
+  }
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const existing = await supabase.selectOne<TransactionRecord>('transactions', {
+      application_uuid: applicationUuid
+    });
+    if (!existing) {
+      return failure(c, { code: 'not_found', message: 'Application not found' }, 404);
+    }
+
+    const actor = user.email ?? user.subject ?? 'Risk Ops';
+    const updated = await supabase.updateOne<TransactionRecord>(
+      'transactions',
+      { application_uuid: applicationUuid },
+      {
+        final_decision: decision,
+        decision: decision,
+        decision_source: 'manual_override',
+        reviewed_by: actor,
+        reviewed_at: toIsoNow(),
+        override_reason: reason,
+        updated_at: toIsoNow()
+      }
+    );
+    if (!updated) {
+      return failure(c, { code: 'not_found', message: 'Application not found' }, 404);
+    }
+
+    await supabase.insertOne<AuditLogRecord>('audit_logs', {
+      actor,
+      action: 'Manual override',
+      details: `Application APP-${applicationUuid} manually set to ${decision}: ${reason}`,
+      status: 'warning',
+      entity_id: String(updated.id),
+      source: 'manual_override'
+    });
+
+    return success(c, normalizeTransaction(updated), 200);
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to override application' }, 500);
+  }
+});
+
+routes.get('/stats', requireAdminAuth, async (c) => {
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const [totalRows, approvalRows, lowRows, mediumRows, highRows] = await Promise.all([
+      supabase.selectManyWithCount<TransactionRecord>('transactions', {
+        limit: 1,
+        offset: 0
+      }),
+      supabase.selectManyWithCount<TransactionRecord>('transactions', {
+        filters: { decision: 'Approve' },
+        limit: 1,
+        offset: 0
+      }),
+      supabase.selectManyWithCount<TransactionRecord>('transactions', {
+        filters: { risk_probability: { op: 'lt', value: 0.33 } },
+        limit: 1,
+        offset: 0
+      }),
+      supabase.selectManyWithCount<TransactionRecord>('transactions', {
+        query: {
+          and: '(risk_probability.gte.0.33,risk_probability.lt.0.66)'
+        },
+        limit: 1,
+        offset: 0
+      }),
+      supabase.selectManyWithCount<TransactionRecord>('transactions', {
+        filters: { risk_probability: { op: 'gte', value: 0.66 } },
+        limit: 1,
+        offset: 0
+      })
+    ]);
+
+    const totalPredictions = totalRows.total;
+    if (totalPredictions === 0) {
+      return success(
+        c,
+        {
+          total_predictions: 0,
+          approval_rate: 0,
+          decline_rate: 0,
+          risk_score_distribution: { low: 0, medium: 0, high: 0 }
+        },
+        200
+      );
+    }
+
+    const approvalCount = approvalRows.total;
+    const declineCount = Math.max(0, totalPredictions - approvalCount);
+
+    return success(
+      c,
+      {
+        total_predictions: totalPredictions,
+        approval_rate: Number((approvalCount / totalPredictions).toFixed(4)),
+        decline_rate: Number((declineCount / totalPredictions).toFixed(4)),
+        risk_score_distribution: {
+          low: lowRows.total,
+          medium: mediumRows.total,
+          high: highRows.total
+        }
+      },
+      200
+    );
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to fetch stats' }, 500);
+  }
+});
+
+routes.get('/logs', requireAdminAuth, async (c) => {
+  const page = parsePage(c.req.query('page'));
+  const limit = parseLimit(c.req.query('limit'));
+  const offset = (page - 1) * limit;
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const { items, total } = await supabase.selectManyWithCount<TransactionRecord>('transactions', {
+      order: 'created_at.desc',
+      limit,
+      offset
+    });
+    return success(
+      c,
+      {
+        page,
+        limit,
+        total,
+        total_pages: total === 0 ? 1 : Math.ceil(total / limit),
+        items: items.map(normalizeTransaction)
+      },
+      200
+    );
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to fetch logs' }, 500);
+  }
+});
+
+routes.get('/audit-logs', requireAdminAuth, async (c) => {
+  const page = parsePage(c.req.query('page'));
+  const limit = parseLimit(c.req.query('limit'));
+  const offset = (page - 1) * limit;
+  const status = asNonEmpty(c.req.query('status'));
+  const search = sanitizeSearchTerm(c.req.query('search'));
+
+  const filters: QueryFilters = {};
+  if (status) {
+    filters.status = status;
+  }
+
+  const query: SupabaseQueryParams = {};
+  if (search) {
+    const searchPattern = `*${search}*`;
+    query.or = `(action.ilike.${searchPattern},details.ilike.${searchPattern},actor.ilike.${searchPattern},entity_id.ilike.${searchPattern})`;
+  }
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    const { items, total } = await supabase.selectManyWithCount<AuditLogRecord>('audit_logs', {
+      filters,
+      order: 'created_at.desc',
+      limit,
+      offset,
+      query
+    });
+    return success(
+      c,
+      {
+        page,
+        limit,
+        total,
+        total_pages: total === 0 ? 1 : Math.ceil(total / limit),
+        items
+      },
+      200
+    );
+  } catch (error) {
+    if (error instanceof SupabaseError) {
+      return failure(c, { code: 'supabase_error', message: error.message }, toApiStatus(error.status));
+    }
+    return failure(c, { code: 'internal_error', message: 'Failed to fetch audit logs' }, 500);
+  }
+});
 
 routes.post('/documents', requireUserAuth, async (c) => {
   const user = c.get('authUser');

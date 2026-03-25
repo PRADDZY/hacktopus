@@ -10,6 +10,14 @@ Cloudflare Worker API scaffold for the migration from FastAPI runtime to Cloudfl
   - `GET /v1/protected/user` (requires authenticated token when `AUTH_REQUIRED=true`)
   - `GET /v1/protected/admin` (requires admin role)
 - Domain foundation endpoints:
+  - `POST /v1/applications`
+  - `GET /v1/applications/me`
+  - `GET /v1/admin/applications`
+  - `GET /v1/admin/applications/:applicationUuid`
+  - `POST /v1/admin/applications/:applicationUuid/override`
+  - `GET /v1/stats`
+  - `GET /v1/logs`
+  - `GET /v1/audit-logs`
   - `POST /v1/documents`
   - `GET /v1/documents/:id`
   - `GET /v1/extraction-jobs/:id`
@@ -42,6 +50,7 @@ All endpoints return a single envelope:
 
 ## Idempotency
 
+- `POST /v1/applications` supports optional idempotency with `Idempotency-Key`.
 - `POST /v1/documents` and `POST /v1/assessments` require `Idempotency-Key`.
 - Reusing the same key with the same payload replays the previous response.
 - Reusing the same key with a different payload returns `409 idempotency_conflict`.
