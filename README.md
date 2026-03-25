@@ -24,6 +24,8 @@ Flow
 
 Shop checkout -> Worker `/v1/documents` + `/v1/assessments` -> ML Service -> Risk probability -> Approve/Decline -> Logged -> Dashboard
 
+Checkout scoring uses real statement evidence only (parsed CSV transactions or completed extraction artifacts).
+
 ## Run Locally
 
 ### 1) ML Service

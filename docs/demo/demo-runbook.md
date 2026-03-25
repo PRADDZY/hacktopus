@@ -84,6 +84,7 @@ npm run seed:demo
 2. (Optional) Profile -> register passkey and verify factor.
 3. Shop -> add product -> checkout.
 4. Upload statement and run EMI eligibility.
+   CSV statements are featureized directly; PDF/image statements require extraction completion before scoring.
 5. Show assessment decision + risk percentage.
 6. Place order and show order history.
 7. Admin login -> dashboard -> review logs/requests.

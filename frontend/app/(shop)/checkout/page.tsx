@@ -135,59 +135,8 @@ const parseCsvTransactions = async (file: File): Promise<StatementTransactionInp
   return output;
 };
 
-const buildSyntheticTransactions = (
-  monthlyIncome: number,
-  purchaseAmount: number
-): StatementTransactionInput[] => {
-  const now = new Date();
-  const transactions: StatementTransactionInput[] = [];
-  let balance = monthlyIncome * 0.25;
-
-  for (let day = 90; day >= 0; day -= 5) {
-    const current = new Date(now);
-    current.setDate(current.getDate() - day);
-
-    if (day % 30 === 0) {
-      const creditAmount = monthlyIncome;
-      balance += creditAmount;
-      transactions.push({
-        booked_at: current.toISOString(),
-        amount: Number(creditAmount.toFixed(2)),
-        balance: Number(balance.toFixed(2)),
-        direction: 'credit',
-        description: 'salary_credit',
-      });
-      continue;
-    }
-
-    const debitAmount =
-      monthlyIncome * (0.04 + ((day % 20) / 100)) + (day < 20 ? purchaseAmount * 0.08 : 0);
-    balance -= debitAmount;
-    transactions.push({
-      booked_at: current.toISOString(),
-      amount: Number(Math.max(debitAmount, 250).toFixed(2)),
-      balance: Number(balance.toFixed(2)),
-      direction: 'debit',
-      description: 'daily_expense',
-    });
-  }
-
-  return transactions;
-};
-
-const buildStatementTransactions = async (
-  file: File | null,
-  monthlyIncome: number,
-  purchaseAmount: number
-): Promise<StatementTransactionInput[]> => {
-  if (file && (file.type.includes('csv') || file.name.toLowerCase().endsWith('.csv'))) {
-    const parsed = await parseCsvTransactions(file);
-    if (parsed.length >= 12) {
-      return parsed;
-    }
-  }
-  return buildSyntheticTransactions(monthlyIncome, purchaseAmount);
-};
+const isCsvStatementFile = (file: File): boolean =>
+  file.type.includes('csv') || file.name.toLowerCase().endsWith('.csv');
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -307,9 +256,13 @@ export default function CheckoutPage() {
         source: 'checkout',
       });
 
+      const csvUpload = isCsvStatementFile(statementFile);
+      let extractionStatus: 'queued' | 'processing' | 'completed' | 'failed' | null = null;
+
       if (document.extraction_job_id) {
-        for (let attempt = 0; attempt < 6; attempt += 1) {
+        for (let attempt = 0; attempt < 20; attempt += 1) {
           const job = await fetchExtractionJob(document.extraction_job_id);
+          extractionStatus = job.status;
           if (job.status === 'completed' || job.status === 'failed') {
             break;
           }
@@ -317,17 +270,47 @@ export default function CheckoutPage() {
         }
       }
 
-      const transactions = await buildStatementTransactions(statementFile, avgMonthlyInflow, total);
-      const response = await createAssessment({
+      if (extractionStatus === 'failed') {
+        throw new Error('Statement extraction failed. Upload a clean statement or try CSV.');
+      }
+
+      if (!csvUpload && document.extraction_job_id && extractionStatus !== 'completed') {
+        throw new Error('Statement extraction is still running. Please retry in a few seconds.');
+      }
+
+      if (!csvUpload && !document.extraction_job_id) {
+        throw new Error('Non-CSV statements require extraction support. Upload CSV or enable extraction.');
+      }
+
+      const assessmentPayload: {
+        document_id: string;
+        statement?: {
+          segment: string;
+          statement_window_days: number;
+          purchase_amount: number;
+          tenure_weeks: number;
+          transactions: StatementTransactionInput[];
+        };
+      } = {
         document_id: document.id,
-        statement: {
+      };
+
+      if (csvUpload) {
+        const transactions = await parseCsvTransactions(statementFile);
+        if (transactions.length < 12) {
+          throw new Error('CSV parsing produced insufficient transactions. Upload a richer statement export.');
+        }
+
+        assessmentPayload.statement = {
           segment: 'gig_worker',
           statement_window_days: 90,
           purchase_amount: total,
           tenure_weeks: emiDuration * 4,
           transactions,
-        },
-      });
+        };
+      }
+
+      const response = await createAssessment(assessmentPayload);
 
       setRiskResult({
         assessmentId: response.id,
@@ -617,6 +600,9 @@ export default function CheckoutPage() {
                         onChange={(e) => setEmiFormData({ ...emiFormData, bankStatement: e.target.files?.[0] || null })}
                         className="input-field"
                       />
+                      <p className="text-xs text-muted">
+                        CSV is scored directly. PDF/image statements must complete extraction before assessment.
+                      </p>
 
                       <Button variant="outline" onClick={handleEmiApproval} disabled={emiApprovalStatus === 'pending'}>
                         {emiApprovalStatus === 'pending' ? 'Checking eligibility...' : 'Check EMI eligibility'}

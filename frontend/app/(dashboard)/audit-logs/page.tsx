@@ -86,7 +86,7 @@ export default function AuditLogsPage() {
       <div>
         <p className="section-kicker">Compliance</p>
         <h1 className="section-title">Audit Logs</h1>
-        <p className="text-sm text-muted mt-2">Trace every decision, fallback, and manual review.</p>
+        <p className="text-sm text-muted mt-2">Trace every decision event and manual review.</p>
       </div>
 
       {error && (
@@ -99,7 +99,7 @@ export default function AuditLogsPage() {
         <div className="card p-6">
           <p className="text-sm text-muted">Total Events</p>
           <p className="text-2xl font-semibold text-ink mt-2">{totalItems}</p>
-          <p className="text-xs text-muted mt-2">Across live + fallback paths</p>
+          <p className="text-xs text-muted mt-2">Across scoring and operations events</p>
         </div>
         <div className="card p-6">
           <p className="text-sm text-muted">Success</p>
@@ -109,7 +109,7 @@ export default function AuditLogsPage() {
         <div className="card p-6">
           <p className="text-sm text-muted">Warnings</p>
           <p className="text-2xl font-semibold text-accent mt-2">{warningCount}</p>
-          <p className="text-xs text-muted mt-2">Fallback or manual review</p>
+          <p className="text-xs text-muted mt-2">Manual review or policy warnings</p>
         </div>
         <div className="card p-6">
           <p className="text-sm text-muted">Errors</p>
