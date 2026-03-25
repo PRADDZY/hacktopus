@@ -1,4 +1,12 @@
 
+class ConstantProbModel:
+    def __init__(self, probability: float) -> None:
+        self.probability = probability
+
+    def predict_proba(self, dataframe):  # noqa: ARG002
+        return [[1 - self.probability, self.probability]]
+
+
 def build_payload():
     return {
         'segment': 'gig_worker',
@@ -112,3 +120,23 @@ def test_featureize_statement_returns_risk_v2_features(client_and_app):
     assert features['deposit_count_30d'] >= 0
     assert features['days_since_last_income'] >= 0
     assert 'stress_index' in features
+
+
+def test_predict_uses_dual_target_bundle_when_available(client_and_app):
+    client, ml_main = client_and_app
+    ml_main.app.state.model = None
+    ml_main.app.state.model_source = 'dual_target'
+    ml_main.app.state.dual_target_bundle = {
+        'primary_model': ConstantProbModel(0.8),
+        'secondary_model': ConstantProbModel(0.2),
+        'primary_calibrator': None,
+        'secondary_calibrator': None,
+        'weight_primary': 0.7,
+        'weight_secondary': 0.3,
+    }
+
+    response = client.post('/predict', json=build_payload())
+    assert response.status_code == 200
+    data = response.json()
+    assert data['model_source'] == 'dual_target'
+    assert data['risk_probability'] == 0.62

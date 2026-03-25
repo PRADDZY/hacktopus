@@ -71,6 +71,8 @@ DEFAULT_REASON_CODE_CATALOG = [
 ]
 DEFAULT_JSON_MODEL_NAME = "gig_bnpl_xgb_model.json"
 STATEMENT_FEATURE_SCHEMA_VERSION = "statement-feature-v1"
+PRIMARY_TARGET_COLUMN = "default_90d_proxy"
+SECONDARY_TARGET_COLUMN = "affordability_stress_proxy"
 
 
 class PredictRequest(BaseModel):
@@ -222,6 +224,59 @@ def _predict_with_calibration(model: Any, calibrator: Any, row: pd.DataFrame) ->
     return float(raw_probability)
 
 
+def _load_dual_target_bundle(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    dual_target = metadata.get("dual_target")
+    if not isinstance(dual_target, dict):
+        return None
+
+    artifacts_dir_raw = os.getenv("MODEL_ARTIFACT_DIR")
+    if not artifacts_dir_raw:
+        return None
+
+    artifacts_dir = Path(artifacts_dir_raw)
+    if not artifacts_dir.exists():
+        return None
+
+    artifacts = dual_target.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return None
+
+    primary_model_path = artifacts_dir / str(artifacts.get("primary_model", "default_model.pkl"))
+    secondary_model_path = artifacts_dir / str(artifacts.get("secondary_model", "stress_model.pkl"))
+    primary_calibrator_path = artifacts_dir / str(
+        artifacts.get("primary_calibrator", "default_calibrator.pkl")
+    )
+    secondary_calibrator_path = artifacts_dir / str(
+        artifacts.get("secondary_calibrator", "stress_calibrator.pkl")
+    )
+
+    if not primary_model_path.exists() or not secondary_model_path.exists():
+        return None
+
+    primary_model = joblib.load(primary_model_path)
+    secondary_model = joblib.load(secondary_model_path)
+    primary_calibrator = joblib.load(primary_calibrator_path) if primary_calibrator_path.exists() else None
+    secondary_calibrator = (
+        joblib.load(secondary_calibrator_path) if secondary_calibrator_path.exists() else None
+    )
+
+    blend_weights = dual_target.get("blend_weights", {}) if isinstance(dual_target.get("blend_weights"), dict) else {}
+    weight_primary = float(blend_weights.get(PRIMARY_TARGET_COLUMN, 0.7))
+    weight_secondary = float(blend_weights.get(SECONDARY_TARGET_COLUMN, 0.3))
+    weight_sum = max(weight_primary + weight_secondary, 1e-6)
+    weight_primary = weight_primary / weight_sum
+    weight_secondary = weight_secondary / weight_sum
+
+    return {
+        "primary_model": primary_model,
+        "secondary_model": secondary_model,
+        "primary_calibrator": primary_calibrator,
+        "secondary_calibrator": secondary_calibrator,
+        "weight_primary": weight_primary,
+        "weight_secondary": weight_secondary,
+    }
+
+
 def _load_ensemble_bundle(metadata: dict[str, Any]) -> dict[str, Any] | None:
     artifacts_dir_raw = os.getenv("MODEL_ARTIFACT_DIR")
     if not artifacts_dir_raw:
@@ -263,6 +318,21 @@ def _load_ensemble_bundle(metadata: dict[str, Any]) -> dict[str, Any] | None:
         "weight_cat": weight_cat,
         "weight_ft": weight_ft,
     }
+
+
+def _predict_dual_target_probability(bundle: dict[str, Any], row: pd.DataFrame) -> float:
+    primary_probability = _predict_with_calibration(
+        bundle["primary_model"],
+        bundle["primary_calibrator"],
+        row,
+    )
+    secondary_probability = _predict_with_calibration(
+        bundle["secondary_model"],
+        bundle["secondary_calibrator"],
+        row,
+    )
+    blended = bundle["weight_primary"] * primary_probability + bundle["weight_secondary"] * secondary_probability
+    return float(_clamp(blended))
 
 
 def _predict_ensemble_probability(bundle: dict[str, Any], row: pd.DataFrame) -> float:
@@ -596,11 +666,14 @@ def _derive_reasons(payload: dict[str, Any]) -> list[PredictionReason]:
 async def lifespan(app: FastAPI):
     model_path, metadata_path = _resolve_model_paths()
     metadata = _load_metadata(metadata_path)
+    dual_target_bundle = _load_dual_target_bundle(metadata)
     ensemble_bundle = _load_ensemble_bundle(metadata)
 
     model_source = "pkl"
     model = None
-    if ensemble_bundle:
+    if dual_target_bundle:
+        model_source = "dual_target"
+    elif ensemble_bundle:
         model_source = "ensemble"
     elif model_path.exists():
         model = joblib.load(model_path)
@@ -620,6 +693,7 @@ async def lifespan(app: FastAPI):
         model_source = "json"
 
     app.state.model = model
+    app.state.dual_target_bundle = dual_target_bundle
     app.state.ensemble_bundle = ensemble_bundle
     app.state.model_source = model_source
     app.state.threshold = float(metadata["threshold"])
@@ -688,7 +762,9 @@ def predict(payload: PredictRequest) -> PredictResponse:
             raise HTTPException(status_code=500, detail=f"Missing feature columns: {missing_columns}")
 
         ordered_row = input_row[feature_columns]
-        if app.state.ensemble_bundle is not None:
+        if app.state.dual_target_bundle is not None:
+            risk_probability = _predict_dual_target_probability(app.state.dual_target_bundle, ordered_row)
+        elif app.state.ensemble_bundle is not None:
             risk_probability = _predict_ensemble_probability(app.state.ensemble_bundle, ordered_row)
         elif app.state.model is not None:
             risk_probability = _predict_risk_probability(app.state.model, ordered_row)
