@@ -523,6 +523,153 @@ describe('Worker domain routes', () => {
     expect(payload.data.final_decision).toBe('Decline');
   });
 
+  it('creates assessment from statement payload via feature endpoint', async () => {
+    const token = await signToken(['user']);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = (init?.method || 'GET').toUpperCase();
+
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'POST') {
+        return jsonResponse([
+          {
+            id: 'idem-assessment-statement-1',
+            owner_sub: 'auth0|user-123',
+            route_key: 'post:/v1/assessments',
+            idempotency_key: 'idem-assessment-statement-1',
+            request_hash: 'hash-asm-statement-1',
+            state: 'in_progress'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/documents') && method === 'GET') {
+        return jsonResponse([
+          {
+            id: 'doc-4',
+            owner_sub: 'auth0|user-123',
+            storage_key: 'uploads/statement.pdf',
+            status: 'ready'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/extracted_features') && method === 'GET') {
+        return jsonResponse([]);
+      }
+
+      if (url.hostname === 'ml.example.com' && url.pathname.endsWith('/featureize/statement') && method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        expect(body.statement_window_days).toBe(90);
+        return jsonResponse({
+          schema_version: 'risk-v2.0.0',
+          feature_schema_version: 'statement-feature-v1',
+          features: {
+            segment: 'gig_worker',
+            monthly_inflow: 70000,
+            monthly_outflow: 41000,
+            inflow_volatility_90d: 0.21,
+            outflow_volatility_90d: 0.27,
+            deposit_count_30d: 5,
+            days_since_last_income: 2,
+            avg_balance_30d: 9800,
+            min_balance_30d: 1200,
+            negative_balance_days_30d: 1,
+            essential_spend_ratio: 0.62,
+            active_loan_count: 1,
+            monthly_installment_burden: 7800,
+            purchase_amount: 24000,
+            tenure_weeks: 24,
+            purchase_to_inflow_ratio: 0.342857,
+            installment_to_inflow_ratio: 0.111429,
+            total_burden_ratio: 0.697143,
+            buffer_ratio: 0.017143,
+            stress_index: 0.54
+          }
+        });
+      }
+
+      if (url.pathname.endsWith('/extracted_features') && method === 'POST') {
+        return jsonResponse([
+          {
+            id: 'feat-statement-1',
+            document_id: 'doc-4',
+            owner_sub: 'auth0|user-123',
+            payload: {
+              segment: 'gig_worker',
+              stress_index: 0.54,
+              total_burden_ratio: 0.697143,
+              buffer_ratio: 0.017143,
+              negative_balance_days_30d: 1
+            }
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/assessments') && method === 'POST') {
+        return jsonResponse([
+          {
+            id: 'asm-statement-1',
+            owner_sub: 'auth0|user-123',
+            document_id: 'doc-4',
+            extracted_feature_id: 'feat-statement-1',
+            risk_probability: 0.59,
+            auto_decision: 'Decline',
+            final_decision: 'Decline',
+            decision_source: 'auto'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'PATCH') {
+        return jsonResponse([
+          {
+            id: 'idem-assessment-statement-1',
+            state: 'completed',
+            response_status: 201
+          }
+        ]);
+      }
+
+      return jsonResponse({ message: `Unexpected request ${method} ${url.pathname}` }, 500);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/assessments',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': 'idem-assessment-statement-1',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          document_id: 'doc-4',
+          statement: {
+            statement_window_days: 90,
+            transactions: [
+              { date: '2026-03-01', amount: 52000, direction: 'credit', balance: 8100 },
+              { date: '2026-03-03', amount: -11200, direction: 'debit', balance: 6200 }
+            ]
+          }
+        })
+      },
+      createEnv({
+        FEATURE_EXTRACTION_ENDPOINT: 'https://ml.example.com/featureize/statement'
+      })
+    );
+
+    expect(response.status).toBe(201);
+    const payload = (await response.json()) as {
+      error: unknown;
+      data: { id: string; final_decision: string };
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.id).toBe('asm-statement-1');
+    expect(payload.data.final_decision).toBe('Decline');
+  });
+
   it('requires idempotency key for assessment creation', async () => {
     const token = await signToken(['user']);
 

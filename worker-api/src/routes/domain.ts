@@ -138,6 +138,31 @@ const getThreshold = (env: AppEnv['Bindings']): number => {
 const getModelVersion = (env: AppEnv['Bindings']): string =>
   asNonEmpty(env.MODEL_VERSION) ?? 'worker-baseline-v1';
 
+const getModelScoringEndpoint = (env: AppEnv['Bindings']): string | null =>
+  asNonEmpty(env.MODEL_SCORING_ENDPOINT);
+
+const getModelScoringToken = (env: AppEnv['Bindings']): string | null =>
+  asNonEmpty(env.MODEL_SCORING_TOKEN);
+
+const getFeatureExtractionEndpoint = (env: AppEnv['Bindings']): string | null => {
+  const explicit = asNonEmpty(env.FEATURE_EXTRACTION_ENDPOINT);
+  if (explicit) {
+    return explicit;
+  }
+
+  const modelEndpoint = getModelScoringEndpoint(env);
+  if (!modelEndpoint) {
+    return null;
+  }
+  if (modelEndpoint.endsWith('/predict')) {
+    return modelEndpoint.replace(/\/predict$/, '/featureize/statement');
+  }
+  return `${modelEndpoint.replace(/\/$/, '')}/featureize/statement`;
+};
+
+const getFeatureExtractionToken = (env: AppEnv['Bindings']): string | null =>
+  asNonEmpty(env.FEATURE_EXTRACTION_TOKEN) ?? getModelScoringToken(env);
+
 const getModalEndpoint = (env: AppEnv['Bindings']): string | null =>
   asNonEmpty(env.MODAL_EXTRACTION_ENDPOINT);
 
@@ -183,8 +208,12 @@ const replayIdempotentResult = (
   return success(c, replay.data, toApiStatus(replay.status, 200));
 };
 
-const computeRiskProbability = (payload: Record<string, unknown>): number => {
-  const read = (key: string, fallback: number): number => {
+const readNumber = (
+  payload: Record<string, unknown>,
+  keys: string[],
+  fallback: number
+): number => {
+  for (const key of keys) {
     const value = payload[key];
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;
@@ -195,13 +224,195 @@ const computeRiskProbability = (payload: Record<string, unknown>): number => {
         return parsed;
       }
     }
-    return fallback;
-  };
+  }
+  return fallback;
+};
 
-  const stress = clamp(read('stress_index', 0.5));
-  const burden = clamp(read('total_burden_ratio', 0.5));
-  const buffer = clamp(read('buffer_ratio', 0.2));
-  const negBalanceDays = clamp(read('neg_balance_days_30d', 0) / 30);
+const readInt = (
+  payload: Record<string, unknown>,
+  keys: string[],
+  fallback: number
+): number => Math.max(0, Math.floor(readNumber(payload, keys, fallback)));
+
+const normalizeRiskFeatures = (payload: Record<string, unknown>): Record<string, unknown> => {
+  const segment = asNonEmpty(payload.segment) ?? 'unknown';
+  const monthlyInflow = Math.max(readNumber(payload, ['monthly_inflow', 'avg_monthly_inflow'], 1), 1);
+  const monthlyOutflow = Math.max(
+    readNumber(payload, ['monthly_outflow', 'avg_monthly_outflow'], monthlyInflow * 0.55),
+    0
+  );
+  const totalBurden = Math.max(
+    readNumber(payload, ['total_burden_ratio'], (monthlyOutflow + monthlyInflow * 0.1) / monthlyInflow),
+    0
+  );
+  const monthlyInstallmentBurden = Math.max(
+    readNumber(payload, ['monthly_installment_burden'], monthlyInflow * Math.min(totalBurden, 1) * 0.2),
+    0
+  );
+  const purchaseAmount = Math.max(
+    readNumber(payload, ['purchase_amount'], monthlyInflow * readNumber(payload, ['purchase_to_inflow_ratio'], 0.2)),
+    0
+  );
+  const minBalance = readNumber(payload, ['min_balance_30d'], Math.max(0, monthlyInflow - monthlyOutflow));
+  const bufferRatio = Math.max(readNumber(payload, ['buffer_ratio'], minBalance / monthlyInflow), 0);
+  const inflowVolatility = Math.max(
+    readNumber(payload, ['inflow_volatility_90d', 'inflow_volatility'], 0.25),
+    0
+  );
+  const outflowVolatility = Math.max(
+    readNumber(payload, ['outflow_volatility_90d', 'outflow_volatility'], 0.3),
+    0
+  );
+  const stressIndex = Math.max(
+    readNumber(payload, ['stress_index'], inflowVolatility * 0.45 + Math.min(totalBurden, 1) * 0.55),
+    0
+  );
+  const installmentToInflow = Math.max(
+    readNumber(payload, ['installment_to_inflow_ratio'], monthlyInstallmentBurden / monthlyInflow),
+    0
+  );
+
+  return {
+    segment,
+    monthly_inflow: Number(monthlyInflow.toFixed(6)),
+    monthly_outflow: Number(monthlyOutflow.toFixed(6)),
+    inflow_volatility_90d: Number(inflowVolatility.toFixed(6)),
+    outflow_volatility_90d: Number(outflowVolatility.toFixed(6)),
+    deposit_count_30d: readInt(payload, ['deposit_count_30d'], 4),
+    days_since_last_income: readInt(payload, ['days_since_last_income'], 7),
+    avg_balance_30d: Number(readNumber(payload, ['avg_balance_30d'], monthlyInflow * 0.25).toFixed(6)),
+    min_balance_30d: Number(minBalance.toFixed(6)),
+    negative_balance_days_30d: readInt(payload, ['negative_balance_days_30d', 'neg_balance_days_30d'], 0),
+    essential_spend_ratio: Number(
+      Math.max(readNumber(payload, ['essential_spend_ratio'], monthlyOutflow / monthlyInflow), 0).toFixed(6)
+    ),
+    active_loan_count: readInt(payload, ['active_loan_count'], totalBurden > 0.65 ? 2 : 1),
+    monthly_installment_burden: Number(monthlyInstallmentBurden.toFixed(6)),
+    purchase_amount: Number(purchaseAmount.toFixed(6)),
+    tenure_weeks: Math.max(readInt(payload, ['tenure_weeks'], 24), 1),
+    purchase_to_inflow_ratio: Number(
+      Math.max(readNumber(payload, ['purchase_to_inflow_ratio'], purchaseAmount / monthlyInflow), 0).toFixed(6)
+    ),
+    installment_to_inflow_ratio: Number(installmentToInflow.toFixed(6)),
+    total_burden_ratio: Number(totalBurden.toFixed(6)),
+    buffer_ratio: Number(bufferRatio.toFixed(6)),
+    stress_index: Number(stressIndex.toFixed(6))
+  };
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+};
+
+const asTransactionArray = (value: unknown): Record<string, unknown>[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is Record<string, unknown> => Boolean(asRecord(item)));
+};
+
+const looksLikeRiskFeatures = (value: unknown): value is Record<string, unknown> => {
+  const payload = asRecord(value);
+  if (!payload) {
+    return false;
+  }
+  return (
+    payload.monthly_inflow !== undefined &&
+    payload.monthly_outflow !== undefined &&
+    payload.stress_index !== undefined
+  );
+};
+
+const resolveFeaturePayload = (value: unknown): Record<string, unknown> | null => {
+  if (looksLikeRiskFeatures(value)) {
+    return value;
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  if (looksLikeRiskFeatures(record.features)) {
+    return record.features as Record<string, unknown>;
+  }
+  const data = asRecord(record.data);
+  if (data && looksLikeRiskFeatures(data.features)) {
+    return data.features as Record<string, unknown>;
+  }
+  return null;
+};
+
+const buildStatementFeatureRequest = (
+  body: Record<string, unknown>
+): Record<string, unknown> | null => {
+  const statement = asRecord(body.statement);
+  if (!statement) {
+    return null;
+  }
+
+  const transactions = asTransactionArray(statement.transactions);
+  if (transactions.length === 0) {
+    return null;
+  }
+
+  const statementSegment = asNonEmpty(statement.segment);
+  const bodySegment = asNonEmpty(body.segment);
+  const segment = statementSegment ?? bodySegment ?? 'unknown';
+  const statementWindowDays = readInt(statement, ['statement_window_days', 'window_days'], 90);
+  const purchaseAmount = readNumber(statement, ['purchase_amount'], readNumber(body, ['purchase_amount'], 0));
+  const tenureWeeks = readInt(statement, ['tenure_weeks'], readInt(body, ['tenure_weeks'], 24));
+
+  return {
+    segment,
+    statement_window_days: Math.max(30, Math.min(180, statementWindowDays)),
+    purchase_amount: Math.max(0, purchaseAmount),
+    tenure_weeks: Math.max(1, tenureWeeks),
+    transactions
+  };
+};
+
+const extractFeaturesFromStatement = async (
+  c: Context<AppEnv>,
+  statementPayload: Record<string, unknown>
+): Promise<Record<string, unknown> | null> => {
+  const endpoint = getFeatureExtractionEndpoint(c.env);
+  if (!endpoint) {
+    return null;
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  const token = getFeatureExtractionToken(c.env);
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(statementPayload)
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await response.json().catch(() => null);
+    return resolveFeaturePayload(payload);
+  } catch {
+    return null;
+  }
+};
+
+const computeHeuristicRiskProbability = (payload: Record<string, unknown>): number => {
+  const stress = clamp(readNumber(payload, ['stress_index'], 0.5));
+  const burden = clamp(readNumber(payload, ['total_burden_ratio'], 0.5));
+  const buffer = clamp(readNumber(payload, ['buffer_ratio'], 0.2));
+  const negBalanceDays = clamp(
+    readNumber(payload, ['negative_balance_days_30d', 'neg_balance_days_30d'], 0) / 30
+  );
 
   const probability = stress * 0.35 + burden * 0.4 + (1 - buffer) * 0.15 + negBalanceDays * 0.1;
   return Number(clamp(probability).toFixed(6));
@@ -209,6 +420,55 @@ const computeRiskProbability = (payload: Record<string, unknown>): number => {
 
 const toDecision = (riskProbability: number, threshold: number): Decision =>
   riskProbability >= threshold ? 'Decline' : 'Approve';
+
+const scoreAssessment = async (
+  c: Context<AppEnv>,
+  rawPayload: Record<string, unknown>
+): Promise<{ riskProbability: number; decision: Decision; modelVersion: string }> => {
+  const normalizedPayload = normalizeRiskFeatures(rawPayload);
+  const endpoint = getModelScoringEndpoint(c.env);
+
+  if (endpoint) {
+    const url = endpoint.endsWith('/predict') ? endpoint : `${endpoint.replace(/\/$/, '')}/predict`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    const token = getModelScoringToken(c.env);
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(normalizedPayload)
+      });
+
+      if (response.ok) {
+        const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        const riskProbability = clamp(readNumber(body, ['risk_probability'], 0.5));
+        const explicitDecision = normalizeDecision(body.decision);
+        const decision = explicitDecision ?? toDecision(riskProbability, getThreshold(c.env));
+        const modelVersion = asNonEmpty(body.model_version) ?? getModelVersion(c.env);
+        return {
+          riskProbability: Number(riskProbability.toFixed(6)),
+          decision,
+          modelVersion
+        };
+      }
+    } catch {
+      // fall through to local fallback for reliability
+    }
+  }
+
+  const fallbackRisk = computeHeuristicRiskProbability(normalizedPayload);
+  return {
+    riskProbability: fallbackRisk,
+    decision: toDecision(fallbackRisk, getThreshold(c.env)),
+    modelVersion: 'worker-heuristic-fallback-v2'
+  };
+};
 
 const dispatchExtractionToModal = async ({
   c,
@@ -736,19 +996,29 @@ routes.post('/assessments', requireUserAuth, async (c) => {
       body.features && typeof body.features === 'object' && !Array.isArray(body.features)
         ? (body.features as Record<string, unknown>)
         : null;
+    const statementPayload = buildStatementFeatureRequest(body);
+    let resolvedFeatures = inputFeatures;
 
-    if (!extractedFeature && inputFeatures) {
+    if (!resolvedFeatures && statementPayload) {
+      const extractedFromStatement = await extractFeaturesFromStatement(c, statementPayload);
+      if (extractedFromStatement) {
+        resolvedFeatures = extractedFromStatement;
+      }
+    }
+
+    if (!extractedFeature && resolvedFeatures) {
       extractedFeature = await supabase.insertOne<ExtractedFeatureRecord>('extracted_features', {
         document_id: documentId,
         owner_sub: user.subject,
-        payload: inputFeatures
+        payload: resolvedFeatures
       });
     }
 
     if (!extractedFeature) {
       const responseError: ApiErrorPayload = {
         code: 'invalid_request',
-        message: 'No extracted feature payload found. Provide features or run extraction first.'
+        message:
+          'No extracted feature payload found. Provide features, include statement transactions, or run extraction first.'
       };
       if (idempotencyRecordId) {
         await finalizeIdempotency({
@@ -763,20 +1033,19 @@ routes.post('/assessments', requireUserAuth, async (c) => {
       return failure(c, responseError, 400);
     }
 
+    const scoring = await scoreAssessment(c, extractedFeature.payload);
     const threshold = getThreshold(c.env);
-    const riskProbability = computeRiskProbability(extractedFeature.payload);
-    const autoDecision = toDecision(riskProbability, threshold);
 
     const responseData = await supabase.insertOne<AssessmentRecord>('assessments', {
       owner_sub: user.subject,
       document_id: documentId,
       extracted_feature_id: extractedFeature.id,
-      risk_probability: riskProbability,
-      auto_decision: autoDecision,
-      final_decision: autoDecision,
+      risk_probability: scoring.riskProbability,
+      auto_decision: scoring.decision,
+      final_decision: scoring.decision,
       decision_source: 'auto',
       threshold,
-      model_version: getModelVersion(c.env)
+      model_version: scoring.modelVersion
     });
 
     if (idempotencyRecordId) {
