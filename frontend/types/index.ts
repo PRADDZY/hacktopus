@@ -299,46 +299,6 @@ export interface DashboardAlert {
   timestamp: string;
 }
 
-export interface FairlensPredictRequest {
-  segment: string;
-  monthly_inflow: number;
-  monthly_outflow: number;
-  inflow_volatility_90d: number;
-  outflow_volatility_90d: number;
-  deposit_count_30d: number;
-  days_since_last_income: number;
-  avg_balance_30d: number;
-  min_balance_30d: number;
-  negative_balance_days_30d: number;
-  essential_spend_ratio: number;
-  active_loan_count: number;
-  monthly_installment_burden: number;
-  purchase_amount: number;
-  tenure_weeks: number;
-  purchase_to_inflow_ratio: number;
-  installment_to_inflow_ratio: number;
-  total_burden_ratio: number;
-  buffer_ratio: number;
-  stress_index: number;
-}
-
-export interface PredictionReason {
-  code: string;
-  feature: string;
-  direction: 'up' | 'down';
-  impact: number;
-  message: string;
-}
-
-export interface FairlensPredictResponse {
-  risk_probability: number;
-  decision: 'Approve' | 'Decline';
-  model_version: string;
-  schema_version: string;
-  calibration_bucket: string;
-  reasons: PredictionReason[];
-}
-
 export type AssistantActionType = 'navigate' | 'retry' | 'contact' | 'none';
 
 export interface AssistantAction {

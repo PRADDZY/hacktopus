@@ -11,8 +11,6 @@ import {
   CreateAssessmentRequest,
   CreateApplicationRequest,
   EMIRequest,
-  FairlensPredictRequest,
-  FairlensPredictResponse,
   WorkerAssessmentItem,
   WorkerDocumentItem,
   WorkerExtractionJobItem,
@@ -22,10 +20,6 @@ import { getAccessToken } from '@/lib/authClient';
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
   'http://localhost:8787';
-const riskApiBaseUrl =
-  process.env.NEXT_PUBLIC_RISK_API_URL?.replace(/\/$/, '') ??
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
-  'http://localhost:9000';
 
 type ApiEnvelopeError = {
   code?: string;
@@ -257,21 +251,6 @@ const parseJsonResponse = async <T>(response: Response, label: string): Promise<
   }
   return parsed.data;
 };
-
-export async function predictBNPLRisk(payload: FairlensPredictRequest): Promise<FairlensPredictResponse> {
-  const headers = await buildHeaders({ isMutation: true, includeJson: true });
-  const response = await fetch(`${riskApiBaseUrl}/predict`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw await parseError(response, 'Prediction');
-  }
-
-  return parseJsonResponse<FairlensPredictResponse>(response, 'Prediction');
-}
 
 export async function createApplication(
   payload: CreateApplicationRequest,

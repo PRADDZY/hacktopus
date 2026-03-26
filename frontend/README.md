@@ -16,7 +16,6 @@ Set environment variables:
 
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8787
-NEXT_PUBLIC_RISK_API_URL=http://localhost:9000
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase-anon-key>
 NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
