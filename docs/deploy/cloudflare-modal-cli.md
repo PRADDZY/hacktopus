@@ -89,12 +89,10 @@ $env:NEXT_PUBLIC_SUPABASE_ANON_KEY="<anon-key>"
 $env:NEXT_PUBLIC_APP_BASE_URL="https://<frontend-domain>"
 
 npm install
-npm exec opennextjs-cloudflare build
-npm exec wrangler -- deploy --config wrangler.jsonc --experimental-autoconfig=false
+npm run cf:deploy
 ```
 
-Note: on Windows, `npm run cf:deploy` can fail with an ESM path error.  
-Use the explicit `opennext build` + `wrangler deploy --experimental-autoconfig=false` sequence above.
+`cf:deploy` now applies a post-build Windows patch for the OpenNext generated handler before running Wrangler deploy.
 
 ## 6) Post-deploy smoke checks
 
