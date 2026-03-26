@@ -252,25 +252,55 @@ const parseJsonResponse = async <T>(response: Response, label: string): Promise<
   return parsed.data;
 };
 
+const requestJson = async <T>({
+  label,
+  path,
+  method = 'GET',
+  payload,
+  isMutation,
+  idempotencyKey,
+  cache
+}: {
+  label: string;
+  path: string;
+  method?: 'GET' | 'POST';
+  payload?: unknown;
+  isMutation?: boolean;
+  idempotencyKey?: string;
+  cache?: RequestCache;
+}): Promise<T> => {
+  const includeJson = method !== 'GET' || payload !== undefined;
+  const headers = await buildHeaders({
+    isMutation: Boolean(isMutation),
+    includeJson,
+    idempotencyKey
+  });
+
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method,
+    headers,
+    cache,
+    body: payload === undefined ? undefined : JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw await parseError(response, label);
+  }
+  return parseJsonResponse<T>(response, label);
+};
+
 export async function createApplication(
   payload: CreateApplicationRequest,
   idempotencyKey?: string
 ): Promise<BackendApplicationItem> {
-  const headers = await buildHeaders({
-    isMutation: true,
-    includeJson: true,
-    idempotencyKey,
-  });
-  const response = await fetch(`${apiBaseUrl}/v1/applications`, {
+  return requestJson<BackendApplicationItem>({
+    label: 'Create application',
+    path: '/v1/applications',
     method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
+    payload,
+    isMutation: true,
+    idempotencyKey
   });
-
-  if (!response.ok) {
-    throw await parseError(response, 'Create application');
-  }
-  return parseJsonResponse<BackendApplicationItem>(response, 'Create application');
 }
 
 export async function createStatementDocument(
@@ -282,65 +312,44 @@ export async function createStatementDocument(
   },
   idempotencyKey?: string
 ): Promise<WorkerDocumentItem> {
-  const headers = await buildHeaders({
-    isMutation: true,
-    includeJson: true,
-    idempotencyKey,
-  });
-  const response = await fetch(`${apiBaseUrl}/v1/documents`, {
+  return requestJson<WorkerDocumentItem>({
+    label: 'Create statement document',
+    path: '/v1/documents',
     method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
+    payload,
+    isMutation: true,
+    idempotencyKey
   });
-
-  if (!response.ok) {
-    throw await parseError(response, 'Create statement document');
-  }
-  return parseJsonResponse<WorkerDocumentItem>(response, 'Create statement document');
 }
 
 export async function fetchExtractionJob(extractionJobId: string): Promise<WorkerExtractionJobItem> {
-  const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${apiBaseUrl}/v1/extraction-jobs/${extractionJobId}`, {
-    cache: 'no-store',
-    headers,
+  return requestJson<WorkerExtractionJobItem>({
+    label: 'Extraction job',
+    path: `/v1/extraction-jobs/${extractionJobId}`,
+    cache: 'no-store'
   });
-  if (!response.ok) {
-    throw await parseError(response, 'Extraction job');
-  }
-  return parseJsonResponse<WorkerExtractionJobItem>(response, 'Extraction job');
 }
 
 export async function createAssessment(
   payload: CreateAssessmentRequest,
   idempotencyKey?: string
 ): Promise<WorkerAssessmentItem> {
-  const headers = await buildHeaders({
-    isMutation: true,
-    includeJson: true,
-    idempotencyKey,
-  });
-  const response = await fetch(`${apiBaseUrl}/v1/assessments`, {
+  return requestJson<WorkerAssessmentItem>({
+    label: 'Create assessment',
+    path: '/v1/assessments',
     method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
+    payload,
+    isMutation: true,
+    idempotencyKey
   });
-  if (!response.ok) {
-    throw await parseError(response, 'Create assessment');
-  }
-  return parseJsonResponse<WorkerAssessmentItem>(response, 'Create assessment');
 }
 
 export async function fetchMyApplications(page = 1, limit = 20): Promise<BackendApplicationsResponse> {
-  const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${apiBaseUrl}/v1/applications/me?page=${page}&limit=${limit}`, {
-    cache: 'no-store',
-    headers,
+  return requestJson<BackendApplicationsResponse>({
+    label: 'My applications',
+    path: `/v1/applications/me?page=${page}&limit=${limit}`,
+    cache: 'no-store'
   });
-  if (!response.ok) {
-    throw await parseError(response, 'My applications');
-  }
-  return parseJsonResponse<BackendApplicationsResponse>(response, 'My applications');
 }
 
 type ApplicationFilters = {
@@ -365,52 +374,40 @@ export async function fetchAdminApplications(
     params.set('search', filters.search.trim());
   }
 
-  const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${apiBaseUrl}/v1/admin/applications?${params.toString()}`, {
-    cache: 'no-store',
-    headers,
+  return requestJson<BackendApplicationsResponse>({
+    label: 'Admin applications',
+    path: `/v1/admin/applications?${params.toString()}`,
+    cache: 'no-store'
   });
-  if (!response.ok) {
-    throw await parseError(response, 'Admin applications');
-  }
-  return parseJsonResponse<BackendApplicationsResponse>(response, 'Admin applications');
 }
 
 export async function fetchAdminApplication(applicationUuid: string): Promise<BackendApplicationItem> {
-  const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${apiBaseUrl}/v1/admin/applications/${applicationUuid}`, {
-    cache: 'no-store',
-    headers,
+  return requestJson<BackendApplicationItem>({
+    label: 'Admin application detail',
+    path: `/v1/admin/applications/${applicationUuid}`,
+    cache: 'no-store'
   });
-  if (!response.ok) {
-    throw await parseError(response, 'Admin application detail');
-  }
-  return parseJsonResponse<BackendApplicationItem>(response, 'Admin application detail');
 }
 
 export async function overrideAdminApplication(
   applicationUuid: string,
   payload: AdminOverrideRequest
 ): Promise<BackendApplicationItem> {
-  const headers = await buildHeaders({ isMutation: true, includeJson: true });
-  const response = await fetch(`${apiBaseUrl}/v1/admin/applications/${applicationUuid}/override`, {
+  return requestJson<BackendApplicationItem>({
+    label: 'Admin override',
+    path: `/v1/admin/applications/${applicationUuid}/override`,
     method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
+    payload,
+    isMutation: true
   });
-  if (!response.ok) {
-    throw await parseError(response, 'Admin override');
-  }
-  return parseJsonResponse<BackendApplicationItem>(response, 'Admin override');
 }
 
 export async function fetchStats(): Promise<BackendStats> {
-  const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${apiBaseUrl}/v1/stats`, { cache: 'no-store', headers });
-  if (!response.ok) {
-    throw await parseError(response, 'Stats');
-  }
-  return parseJsonResponse<BackendStats>(response, 'Stats');
+  return requestJson<BackendStats>({
+    label: 'Stats',
+    path: '/v1/stats',
+    cache: 'no-store'
+  });
 }
 
 export async function fetchLogs(page = 1, limit = 20): Promise<BackendLogsResponse> {
@@ -449,27 +446,19 @@ export async function fetchAuditLogs(
     params.set('search', normalizedSearch);
   }
 
-  const headers = await buildHeaders({ isMutation: false, includeJson: false });
-  const response = await fetch(`${apiBaseUrl}/v1/audit-logs?${params.toString()}`, {
-    cache: 'no-store',
-    headers,
+  return requestJson<BackendAuditLogsResponse>({
+    label: 'Audit logs',
+    path: `/v1/audit-logs?${params.toString()}`,
+    cache: 'no-store'
   });
-  if (!response.ok) {
-    throw await parseError(response, 'Audit logs');
-  }
-  return parseJsonResponse<BackendAuditLogsResponse>(response, 'Audit logs');
 }
 
 export async function queryAssistant(payload: AssistantQueryRequest): Promise<AssistantQueryResponse> {
-  const headers = await buildHeaders({ isMutation: false, includeJson: true });
-  const response = await fetch(`${apiBaseUrl}/v1/assistant/query`, {
+  return requestJson<AssistantQueryResponse>({
+    label: 'Assistant',
+    path: '/v1/assistant/query',
     method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
+    payload
   });
-  if (!response.ok) {
-    throw await parseError(response, 'Assistant');
-  }
-  return parseJsonResponse<AssistantQueryResponse>(response, 'Assistant');
 }
 

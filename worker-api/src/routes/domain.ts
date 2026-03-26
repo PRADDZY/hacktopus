@@ -2,13 +2,18 @@ import { Context, Hono } from 'hono';
 import { requireAdminAuth, requireUserAuth } from '../auth';
 import { failure, success, toApiStatus, type ApiStatus } from '../http';
 import {
-  abandonIdempotency,
   beginIdempotency,
   createIdempotencyHash,
   finalizeIdempotency,
   readIdempotencyKey,
   type ApiErrorPayload
 } from '../idempotency';
+import {
+  abandonMutationIdempotency,
+  finalizeMutationError,
+  finalizeMutationSuccess,
+  handleMutationSupabaseError
+} from './domain-mutation';
 import {
   SupabaseError,
   SupabaseRestClient,
@@ -303,25 +308,6 @@ const replayIdempotentResult = (
     return failure(c, replay.error, toApiStatus(replay.status, 400));
   }
   return success(c, replay.data, toApiStatus(replay.status, 200));
-};
-
-const abandonIdempotencyIfNeeded = async (
-  c: Context<AppEnv>,
-  idempotencyRecordId: string | null
-): Promise<void> => {
-  if (!idempotencyRecordId) {
-    return;
-  }
-
-  try {
-    const supabase = new SupabaseRestClient(c);
-    await abandonIdempotency({
-      supabase,
-      recordId: idempotencyRecordId
-    });
-  } catch {
-    // Best effort cleanup only.
-  }
 };
 
 const readNumber = (
@@ -941,55 +927,39 @@ routes.post('/applications', requireUserAuth, async (c) => {
 
     const responseData = normalizeTransaction(transaction);
 
-    if (idempotencyRecordId) {
-      await finalizeIdempotency({
-        supabase,
-        env: c.env,
-        recordId: idempotencyRecordId,
-        status: 201,
-        data: responseData,
-        error: null
-      });
-    }
+    await finalizeMutationSuccess({
+      c,
+      idempotencyRecordId,
+      status: 201,
+      data: responseData
+    });
 
     return success(c, responseData, 201);
   } catch (error) {
     if (error instanceof ModelScoringError) {
       const responseError: ApiErrorPayload = { code: error.code, message: error.message };
-      if (idempotencyRecordId) {
-        const supabase = new SupabaseRestClient(c);
-        await finalizeIdempotency({
-          supabase,
-          env: c.env,
-          recordId: idempotencyRecordId,
-          status: error.status,
-          data: null,
-          error: responseError
-        });
-      }
+      await finalizeMutationError({
+        c,
+        idempotencyRecordId,
+        status: error.status,
+        error: responseError
+      });
       return failure(c, responseError, error.status);
     }
 
     if (error instanceof SupabaseError) {
-      const status = toApiStatus(error.status);
-      const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
-      if (idempotencyRecordId && status < 500) {
-        const supabase = new SupabaseRestClient(c);
-        await finalizeIdempotency({
-          supabase,
-          env: c.env,
-          recordId: idempotencyRecordId,
-          status,
-          data: null,
-          error: responseError
-        });
-      } else if (status >= 500) {
-        await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
-      }
+      const { status, responseError } = await handleMutationSupabaseError({
+        c,
+        idempotencyRecordId,
+        error
+      });
       return failure(c, responseError, status);
     }
 
-    await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
+    await abandonMutationIdempotency({
+      c,
+      idempotencyRecordId
+    });
     return failure(c, { code: 'internal_error', message: 'Failed to create application' }, 500);
   }
 });
@@ -1418,16 +1388,12 @@ routes.post('/documents', requireUserAuth, async (c) => {
       ...(patchedDocument ?? {})
     };
 
-    if (idempotencyRecordId) {
-      await finalizeIdempotency({
-        supabase,
-        env: c.env,
-        recordId: idempotencyRecordId,
-        status: 201,
-        data: responseData,
-        error: null
-      });
-    }
+    await finalizeMutationSuccess({
+      c,
+      idempotencyRecordId,
+      status: 201,
+      data: responseData
+    });
 
     return success(
       c,
@@ -1437,39 +1403,27 @@ routes.post('/documents', requireUserAuth, async (c) => {
   } catch (error) {
     if (error instanceof ModelScoringError) {
       const responseError: ApiErrorPayload = { code: error.code, message: error.message };
-      if (idempotencyRecordId) {
-        const supabase = new SupabaseRestClient(c);
-        await finalizeIdempotency({
-          supabase,
-          env: c.env,
-          recordId: idempotencyRecordId,
-          status: error.status,
-          data: null,
-          error: responseError
-        });
-      }
+      await finalizeMutationError({
+        c,
+        idempotencyRecordId,
+        status: error.status,
+        error: responseError
+      });
       return failure(c, responseError, error.status);
     }
 
     if (error instanceof SupabaseError) {
-      const status = toApiStatus(error.status);
-      const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
-      if (idempotencyRecordId && status < 500) {
-        const supabase = new SupabaseRestClient(c);
-        await finalizeIdempotency({
-          supabase,
-          env: c.env,
-          recordId: idempotencyRecordId,
-          status,
-          data: null,
-          error: responseError
-        });
-      } else if (status >= 500) {
-        await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
-      }
+      const { status, responseError } = await handleMutationSupabaseError({
+        c,
+        idempotencyRecordId,
+        error
+      });
       return failure(c, responseError, status);
     }
-    await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
+    await abandonMutationIdempotency({
+      c,
+      idempotencyRecordId
+    });
     return failure(c, { code: 'internal_error', message: 'Failed to create document' }, 500);
   }
 });
@@ -1823,38 +1777,27 @@ routes.post('/assessments', requireUserAuth, async (c) => {
       model_version: scoring.modelVersion
     });
 
-    if (idempotencyRecordId) {
-      await finalizeIdempotency({
-        supabase,
-        env: c.env,
-        recordId: idempotencyRecordId,
-        status: 201,
-        data: responseData,
-        error: null
-      });
-    }
+    await finalizeMutationSuccess({
+      c,
+      idempotencyRecordId,
+      status: 201,
+      data: responseData
+    });
 
     return success(c, responseData, 201);
   } catch (error) {
     if (error instanceof SupabaseError) {
-      const status = toApiStatus(error.status);
-      const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
-      if (idempotencyRecordId && status < 500) {
-        const supabase = new SupabaseRestClient(c);
-        await finalizeIdempotency({
-          supabase,
-          env: c.env,
-          recordId: idempotencyRecordId,
-          status,
-          data: null,
-          error: responseError
-        });
-      } else if (status >= 500) {
-        await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
-      }
+      const { status, responseError } = await handleMutationSupabaseError({
+        c,
+        idempotencyRecordId,
+        error
+      });
       return failure(c, responseError, status);
     }
-    await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
+    await abandonMutationIdempotency({
+      c,
+      idempotencyRecordId
+    });
     return failure(c, { code: 'internal_error', message: 'Failed to create assessment' }, 500);
   }
 });
