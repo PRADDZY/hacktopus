@@ -30,6 +30,7 @@ const riskApiBaseUrl =
 type ApiEnvelopeError = {
   code?: string;
   message?: string;
+  details?: unknown;
 };
 
 type ApiEnvelope<T> = {
@@ -40,6 +41,32 @@ type ApiEnvelope<T> = {
     timestamp?: string;
   };
 };
+
+type FairlensApiErrorInit = {
+  status: number;
+  code?: string;
+  details?: unknown;
+  requestId?: string;
+};
+
+export class FairlensApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly details?: unknown;
+  readonly requestId?: string;
+
+  constructor(message: string, init: FairlensApiErrorInit) {
+    super(message);
+    this.name = 'FairlensApiError';
+    this.status = init.status;
+    this.code = init.code;
+    this.details = init.details;
+    this.requestId = init.requestId;
+  }
+}
+
+export const isFairlensApiError = (value: unknown): value is FairlensApiError =>
+  value instanceof FairlensApiError;
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
@@ -132,28 +159,59 @@ export const mapLogToEMIRequest = (item: BackendLogItem): EMIRequest => {
   };
 };
 
-const parseError = async (response: Response): Promise<string> => {
+const parseError = async (response: Response, label = 'Request'): Promise<FairlensApiError> => {
+  const fallbackMessage = `${label} failed (${response.status})`;
   const text = await response.text();
   if (!text.trim()) {
-    return `Request failed (${response.status})`;
+    return new FairlensApiError(fallbackMessage, {
+      status: response.status,
+    });
   }
 
   try {
     const data = JSON.parse(text) as
-      | { detail?: string; message?: string; error?: ApiEnvelopeError | null }
+      | {
+          detail?: string;
+          message?: string;
+          error?: ApiEnvelopeError | null;
+          meta?: { requestId?: string };
+        }
       | ApiEnvelope<unknown>;
+    const requestId =
+      typeof (data as { meta?: { requestId?: string } }).meta?.requestId === 'string'
+        ? (data as { meta?: { requestId?: string } }).meta?.requestId
+        : undefined;
+
     if (typeof (data as { detail?: string }).detail === 'string') {
-      return (data as { detail: string }).detail;
+      return new FairlensApiError((data as { detail: string }).detail, {
+        status: response.status,
+        requestId,
+      });
     }
-    if ((data as { error?: ApiEnvelopeError | null }).error?.message) {
-      return (data as { error: ApiEnvelopeError }).error.message ?? `Request failed (${response.status})`;
+
+    const envelopeError = (data as { error?: ApiEnvelopeError | null }).error;
+    if (envelopeError?.message) {
+      return new FairlensApiError(envelopeError.message, {
+        status: response.status,
+        code: envelopeError.code,
+        details: envelopeError.details,
+        requestId,
+      });
     }
     if (typeof (data as { message?: string }).message === 'string') {
-      return (data as { message: string }).message;
+      return new FairlensApiError((data as { message: string }).message, {
+        status: response.status,
+        requestId,
+      });
     }
-    return `Request failed (${response.status})`;
+    return new FairlensApiError(fallbackMessage, {
+      status: response.status,
+      requestId,
+    });
   } catch {
-    return `Request failed (${response.status})`;
+    return new FairlensApiError(fallbackMessage, {
+      status: response.status,
+    });
   }
 };
 
@@ -184,10 +242,18 @@ const parseJsonResponse = async <T>(response: Response, label: string): Promise<
   }
 
   if (parsed.error) {
-    throw new Error(parsed.error.message || `${label} failed (${response.status})`);
+    throw new FairlensApiError(parsed.error.message || `${label} failed (${response.status})`, {
+      status: response.status,
+      code: parsed.error.code,
+      details: parsed.error.details,
+      requestId: parsed.meta?.requestId,
+    });
   }
   if (parsed.data === null) {
-    throw new Error(`${label} returned empty data (${response.status})`);
+    throw new FairlensApiError(`${label} returned empty data (${response.status})`, {
+      status: response.status,
+      requestId: parsed.meta?.requestId,
+    });
   }
   return parsed.data;
 };
@@ -201,7 +267,7 @@ export async function predictBNPLRisk(payload: FairlensPredictRequest): Promise<
   });
 
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Prediction');
   }
 
   return parseJsonResponse<FairlensPredictResponse>(response, 'Prediction');
@@ -223,7 +289,7 @@ export async function createApplication(
   });
 
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Create application');
   }
   return parseJsonResponse<BackendApplicationItem>(response, 'Create application');
 }
@@ -249,7 +315,7 @@ export async function createStatementDocument(
   });
 
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Create statement document');
   }
   return parseJsonResponse<WorkerDocumentItem>(response, 'Create statement document');
 }
@@ -261,7 +327,7 @@ export async function fetchExtractionJob(extractionJobId: string): Promise<Worke
     headers,
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Extraction job');
   }
   return parseJsonResponse<WorkerExtractionJobItem>(response, 'Extraction job');
 }
@@ -281,7 +347,7 @@ export async function createAssessment(
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Create assessment');
   }
   return parseJsonResponse<WorkerAssessmentItem>(response, 'Create assessment');
 }
@@ -293,7 +359,7 @@ export async function fetchMyApplications(page = 1, limit = 20): Promise<Backend
     headers,
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'My applications');
   }
   return parseJsonResponse<BackendApplicationsResponse>(response, 'My applications');
 }
@@ -326,7 +392,7 @@ export async function fetchAdminApplications(
     headers,
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Admin applications');
   }
   return parseJsonResponse<BackendApplicationsResponse>(response, 'Admin applications');
 }
@@ -338,7 +404,7 @@ export async function fetchAdminApplication(applicationUuid: string): Promise<Ba
     headers,
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Admin application detail');
   }
   return parseJsonResponse<BackendApplicationItem>(response, 'Admin application detail');
 }
@@ -354,7 +420,7 @@ export async function overrideAdminApplication(
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Admin override');
   }
   return parseJsonResponse<BackendApplicationItem>(response, 'Admin override');
 }
@@ -363,7 +429,7 @@ export async function fetchStats(): Promise<BackendStats> {
   const headers = await buildHeaders({ isMutation: false, includeJson: false });
   const response = await fetch(`${apiBaseUrl}/v1/stats`, { cache: 'no-store', headers });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Stats');
   }
   return parseJsonResponse<BackendStats>(response, 'Stats');
 }
@@ -410,7 +476,7 @@ export async function fetchAuditLogs(
     headers,
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Audit logs');
   }
   return parseJsonResponse<BackendAuditLogsResponse>(response, 'Audit logs');
 }
@@ -423,7 +489,7 @@ export async function queryAssistant(payload: AssistantQueryRequest): Promise<As
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await parseError(response));
+    throw await parseError(response, 'Assistant');
   }
   return parseJsonResponse<AssistantQueryResponse>(response, 'Assistant');
 }

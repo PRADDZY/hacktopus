@@ -5,7 +5,12 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { CheckCircle, Loader2, XCircle } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { createAssessment, createStatementDocument, fetchExtractionJob } from '@/lib/fairlensApi';
+import {
+  createAssessment,
+  createStatementDocument,
+  fetchExtractionJob,
+  isFairlensApiError,
+} from '@/lib/fairlensApi';
 import { formatCurrency } from '@/lib/format';
 import { useStore } from '@/store/StoreContext';
 import type { StatementTransactionInput } from '@/types';
@@ -32,6 +37,22 @@ const steps = [
 ];
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const toCheckoutErrorMessage = (error: unknown): string => {
+  if (isFairlensApiError(error)) {
+    if (error.code === 'model_unavailable') {
+      return 'Risk engine is temporarily unavailable. Please retry in a minute.';
+    }
+    if (error.code === 'idempotency_in_progress') {
+      return 'This request is still processing. Please wait a few seconds and retry.';
+    }
+    if (error.status >= 500) {
+      return 'Service is temporarily unavailable. Please retry shortly.';
+    }
+  }
+
+  return error instanceof Error ? error.message : 'Unable to complete EMI risk assessment';
+};
 
 const parseNumeric = (value: string): number | null => {
   const normalized = value.replace(/[^\d.-]/g, '').trim();
@@ -320,7 +341,7 @@ export default function CheckoutPage() {
       });
       setEmiApprovalStatus(response.final_decision === 'Approve' ? 'approved' : 'rejected');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unable to complete EMI risk assessment';
+      const errorMessage = toCheckoutErrorMessage(error);
       setEmiError(errorMessage);
       setEmiApprovalStatus('rejected');
     }

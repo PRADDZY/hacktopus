@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  FairlensApiError,
   queryAssistant,
   createAssessment,
   createApplication,
@@ -178,6 +179,36 @@ export const run = async () => {
         ),
       async () => {
         await assert.rejects(fetchStats(), /Backend unavailable/);
+      }
+    );
+  }
+
+  {
+    await withMockedFetch(
+      async () =>
+        jsonResponse(
+          {
+            data: null,
+            error: {
+              code: 'model_unavailable',
+              message: 'Model scoring service is unavailable',
+            },
+            meta: {
+              requestId: 'req-model-503',
+            },
+          },
+          503
+        ),
+      async () => {
+        await assert.rejects(fetchStats(), (error: unknown) => {
+          assert.equal(error instanceof FairlensApiError, true);
+          if (error instanceof FairlensApiError) {
+            assert.equal(error.code, 'model_unavailable');
+            assert.equal(error.status, 503);
+            assert.equal(error.requestId, 'req-model-503');
+          }
+          return true;
+        });
       }
     );
   }
