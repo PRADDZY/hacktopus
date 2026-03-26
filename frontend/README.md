@@ -42,7 +42,7 @@ Dashboard:
 - API calls include `Authorization`, `X-Request-Id`, and `Idempotency-Key` headers when applicable.
 - AI assistant widget is available in both shop and dashboard layouts via Worker `POST /v1/assistant/query`.
 - Checkout flow is statement-first via Worker `/v1/documents` + `/v1/assessments`.
-- Checkout shows pass/fail with model reasons and ends on mock success for approved/debit paths.
+- Checkout shows pass/fail with model reasons and ends on success page for approved/debit paths.
 - Manager checker in dashboard uses the same upload + scoring pipeline as checkout.
 
 ## Shared Types

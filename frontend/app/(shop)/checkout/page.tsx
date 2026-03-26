@@ -27,6 +27,7 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null);
 
   const amount = Number(loanAmount);
+  const approvalConfidence = riskProbability !== null ? Math.max(0, 1 - riskProbability) : null;
 
   const resetAssessment = () => {
     setAssessmentState('idle');
@@ -81,7 +82,7 @@ export default function CheckoutPage() {
     <div className="mx-auto max-w-5xl space-y-8">
       <div>
         <p className="section-kicker">Checkout</p>
-        <h1 className="section-title">Complete your demo purchase</h1>
+        <h1 className="section-title">Complete your purchase</h1>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
@@ -111,7 +112,7 @@ export default function CheckoutPage() {
                 }}
                 className="mr-2"
               />
-              Pay with Debit Card (Mock)
+              Pay with Debit Card
             </label>
             <label className={`block rounded-xl border p-4 ${paymentMethod === 'fairlens' ? 'border-accent bg-accent/5' : 'border-line'}`}>
               <input
@@ -130,7 +131,7 @@ export default function CheckoutPage() {
           </div>
 
           {paymentMethod === 'debit' ? (
-            <Button onClick={handleDebitCheckout}>Place order (mock)</Button>
+            <Button onClick={handleDebitCheckout}>Place order</Button>
           ) : (
             <Button onClick={() => setShowFairlensModal(true)}>Start FairLens check</Button>
           )}
@@ -152,7 +153,7 @@ export default function CheckoutPage() {
           </div>
           {assessmentState === 'approved' ? (
             <div className="rounded-xl border border-highlight/30 bg-highlight/10 p-3 text-sm text-highlight">
-              FairLens approved. Continue to place demo order.
+              FairLens approved. Continue to place order.
             </div>
           ) : null}
           {assessmentState === 'rejected' ? (
@@ -228,7 +229,10 @@ export default function CheckoutPage() {
                   Assessment ID: {assessmentId ? `ASM-${assessmentId.slice(0, 8)}` : 'N/A'}
                 </p>
                 <p className="text-sm text-muted">
-                  Risk probability: {riskProbability !== null ? `${(riskProbability * 100).toFixed(2)}%` : 'N/A'}
+                  Default Risk (PD): {riskProbability !== null ? `${(riskProbability * 100).toFixed(2)}%` : 'N/A'}
+                </p>
+                <p className="text-sm text-muted">
+                  Approval Confidence: {approvalConfidence !== null ? `${(approvalConfidence * 100).toFixed(2)}%` : 'N/A'}
                 </p>
               </div>
             ) : null}

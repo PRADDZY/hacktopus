@@ -13,7 +13,7 @@ test('completes FairLens checkout and lands on success page', async ({ page }) =
       body: JSON.stringify({
         data: {
           id: 'doc-test-1',
-          storage_key: 'uploads/mock.pdf',
+          storage_key: 'uploads/statement.pdf',
           extraction_job_id: 'job-test-1',
           extraction_job_status: 'queued',
         },
@@ -72,7 +72,7 @@ test('completes FairLens checkout and lands on success page', async ({ page }) =
   });
 
   await page.getByRole('link', { name: 'Buy now' }).click();
-  await expect(page.getByRole('heading', { name: 'Complete your demo purchase' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Complete your purchase' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Start FairLens check' }).click();
   await expect(page.getByRole('heading', { name: 'Upload bank statement' })).toBeVisible();
@@ -88,5 +88,5 @@ test('completes FairLens checkout and lands on success page', async ({ page }) =
   await page.getByRole('button', { name: 'Continue to checkout' }).click();
 
   await page.waitForURL('**/checkout/success**');
-  await expect(page.getByRole('heading', { name: 'Order Placed (Mock)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Order Placed' })).toBeVisible();
 });

@@ -10,7 +10,7 @@ export default function DashboardTopbar() {
         <h1 className="text-xl font-semibold">FairLens Dashboard</h1>
       </div>
       <Link href="/shop" className="btn-outline px-4 py-2 text-xs font-semibold">
-        Open shop demo
+        Open shop
       </Link>
     </div>
   );

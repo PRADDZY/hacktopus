@@ -5,7 +5,7 @@ import { DashboardMode } from '@/lib/dashboardMode';
 export const useDashboardMode = () => {
   return {
     mode: 'live' as const,
-    isDemo: false,
+    isLive: true,
     setMode: (_nextMode: DashboardMode) => {},
   };
 };

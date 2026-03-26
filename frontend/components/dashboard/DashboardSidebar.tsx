@@ -26,8 +26,8 @@ export default function DashboardSidebar() {
       </Link>
 
       <div className="mt-auto pt-8 text-xs text-muted">
-        <p className="font-semibold">Demo mode</p>
-        <p className="mt-2">Recent actions and manager check only.</p>
+        <p className="font-semibold">Live mode</p>
+        <p className="mt-2">Recent actions and manager check.</p>
       </div>
     </aside>
   );

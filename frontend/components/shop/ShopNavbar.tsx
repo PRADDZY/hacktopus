@@ -23,7 +23,7 @@ export default function ShopNavbar() {
             <Link href="/shop" className="text-lg font-semibold">
               FairLens Store
             </Link>
-            <div className="text-xs text-muted uppercase tracking-[0.2em]">Demo Checkout</div>
+            <div className="text-xs text-muted uppercase tracking-[0.2em]">Instant Checkout</div>
           </div>
         </div>
 

@@ -140,7 +140,7 @@ export default function LoginPage() {
     <div className="mx-auto max-w-2xl">
       <div className="card p-6 space-y-5">
         <p className="section-kicker">Authentication</p>
-        <h1 className="section-title">Sign in to FairLens Demo</h1>
+        <h1 className="section-title">Sign in to FairLens</h1>
         <p className="text-sm text-muted">
           {isAuthConfigured
             ? 'Choose role, then continue with secure sign-in.'

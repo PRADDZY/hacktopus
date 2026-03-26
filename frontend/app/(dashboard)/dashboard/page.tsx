@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const [checkRisk, setCheckRisk] = useState<number | null>(null);
   const [checkReasons, setCheckReasons] = useState<PredictionReason[]>([]);
   const [checkAssessmentId, setCheckAssessmentId] = useState<string | null>(null);
+  const checkApprovalConfidence = checkRisk !== null ? Math.max(0, 1 - checkRisk) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -225,7 +226,9 @@ export default function DashboardPage() {
 
           {checkState === 'approved' ? (
             <div className="rounded-xl border border-highlight/30 bg-highlight/10 p-3 text-sm text-highlight">
-              Approved · ASM-{checkAssessmentId?.slice(0, 8)} · Risk {checkRisk !== null ? `${(checkRisk * 100).toFixed(2)}%` : 'N/A'}
+              Approved · ASM-{checkAssessmentId?.slice(0, 8)} · Default Risk (PD){' '}
+              {checkRisk !== null ? `${(checkRisk * 100).toFixed(2)}%` : 'N/A'} · Approval Confidence{' '}
+              {checkApprovalConfidence !== null ? `${(checkApprovalConfidence * 100).toFixed(2)}%` : 'N/A'}
             </div>
           ) : null}
 

@@ -26,7 +26,7 @@ export default function ShopPage() {
           </div>
 
           <div className="rounded-xl border border-line p-4">
-            <p className="text-sm font-semibold">Demo checkout</p>
+            <p className="text-sm font-semibold">FairLens checkout</p>
             <p className="text-sm text-muted mt-2">
               Use FairLens at checkout to run statement-based credit evaluation.
             </p>
