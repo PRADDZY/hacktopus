@@ -425,6 +425,55 @@ const asTransactionArray = (value: unknown): Record<string, unknown>[] => {
   return value.filter((item): item is Record<string, unknown> => Boolean(asRecord(item)));
 };
 
+const normalizeStatementTransactions = (
+  transactions: Record<string, unknown>[]
+): Record<string, unknown>[] => {
+  const normalized: Record<string, unknown>[] = [];
+
+  for (const transaction of transactions) {
+    const date =
+      asNonEmpty(transaction.date) ??
+      asNonEmpty(transaction.booked_at) ??
+      asNonEmpty(transaction.txn_date) ??
+      asNonEmpty(transaction.transaction_date);
+    const amount =
+      toFiniteNumber(transaction.amount) ??
+      toFiniteNumber(transaction.txn_amount) ??
+      toFiniteNumber(transaction.value);
+
+    if (!date || amount === null || !Number.isFinite(amount) || amount === 0) {
+      continue;
+    }
+
+    const direction =
+      asNonEmpty(transaction.direction) ??
+      asNonEmpty(transaction.type) ??
+      asNonEmpty(transaction.drcr) ??
+      asNonEmpty(transaction.crdr);
+    const balance =
+      toFiniteNumber(transaction.balance) ??
+      toFiniteNumber(transaction.closing_balance) ??
+      toFiniteNumber(transaction.running_balance);
+    const description =
+      asNonEmpty(transaction.description) ??
+      asNonEmpty(transaction.narration) ??
+      asNonEmpty(transaction.remark) ??
+      asNonEmpty(transaction.details);
+    const category = asNonEmpty(transaction.category);
+
+    normalized.push({
+      date,
+      amount,
+      direction: direction ?? undefined,
+      balance: balance ?? undefined,
+      description: description ?? undefined,
+      category: category ?? undefined
+    });
+  }
+
+  return normalized;
+};
+
 const looksLikeRiskFeatures = (value: unknown): value is Record<string, unknown> => {
   const payload = asRecord(value);
   if (!payload) {
@@ -463,7 +512,7 @@ const buildStatementFeatureRequest = (
     return null;
   }
 
-  const transactions = asTransactionArray(statement.transactions);
+  const transactions = normalizeStatementTransactions(asTransactionArray(statement.transactions));
   if (transactions.length === 0) {
     return null;
   }

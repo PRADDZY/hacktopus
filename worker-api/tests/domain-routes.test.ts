@@ -562,6 +562,11 @@ describe('Worker domain routes', () => {
       if (url.hostname === 'ml.example.com' && url.pathname.endsWith('/featureize/statement') && method === 'POST') {
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
         expect(body.statement_window_days).toBe(90);
+        const transactions = Array.isArray(body.transactions) ? body.transactions : [];
+        expect(transactions.length).toBeGreaterThan(0);
+        const first = transactions[0] as Record<string, unknown>;
+        expect(first.date).toBe('2026-03-01T00:00:00.000Z');
+        expect(first.booked_at).toBeUndefined();
         return jsonResponse({
           schema_version: 'risk-v2.0.0',
           feature_schema_version: 'statement-feature-v1',
@@ -650,8 +655,18 @@ describe('Worker domain routes', () => {
           statement: {
             statement_window_days: 90,
             transactions: [
-              { date: '2026-03-01', amount: 52000, direction: 'credit', balance: 8100 },
-              { date: '2026-03-03', amount: -11200, direction: 'debit', balance: 6200 }
+              {
+                booked_at: '2026-03-01T00:00:00.000Z',
+                amount: 52000,
+                direction: 'credit',
+                balance: 8100
+              },
+              {
+                booked_at: '2026-03-03T00:00:00.000Z',
+                amount: -11200,
+                direction: 'debit',
+                balance: 6200
+              }
             ]
           }
         })

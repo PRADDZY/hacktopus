@@ -94,6 +94,7 @@ models/*.pkl
 data/raw/
 data/processed/
 *.csv
+!docs/demo/statements/*.csv
 *.parquet
 backend.txt
 frontend.txt
