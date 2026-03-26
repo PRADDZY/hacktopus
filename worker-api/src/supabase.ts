@@ -143,7 +143,7 @@ export class SupabaseRestClient {
     query,
     prefer
   }: {
-    method: 'GET' | 'POST' | 'PATCH';
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     table: string;
     filters?: QueryFilters;
     body?: unknown;
@@ -182,7 +182,7 @@ export class SupabaseRestClient {
     query,
     prefer
   }: {
-    method: 'GET' | 'POST' | 'PATCH';
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     table: string;
     filters?: QueryFilters;
     body?: unknown;
@@ -318,5 +318,14 @@ export class SupabaseRestClient {
       return null;
     }
     return payload[0] as T;
+  }
+
+  async deleteOne(table: string, filters: QueryFilters): Promise<void> {
+    await this.request<unknown>({
+      method: 'DELETE',
+      table,
+      filters,
+      prefer: 'return=minimal'
+    });
   }
 }

@@ -707,6 +707,60 @@ describe('Worker domain routes', () => {
     });
   });
 
+  it('releases in-progress idempotency key on assessment server error', async () => {
+    const token = await signToken(['user']);
+    let deleteCalls = 0;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = (init?.method || 'GET').toUpperCase();
+
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'POST') {
+        return jsonResponse([
+          {
+            id: 'idem-assessment-500',
+            owner_sub: 'auth0|user-123',
+            route_key: 'post:/v1/assessments',
+            idempotency_key: 'idem-assessment-500',
+            request_hash: 'hash-assessment-500',
+            state: 'in_progress'
+          }
+        ]);
+      }
+
+      if (url.pathname.endsWith('/documents') && method === 'GET') {
+        return jsonResponse({ message: 'db unavailable' }, 503);
+      }
+
+      if (url.pathname.endsWith('/api_idempotency_keys') && method === 'DELETE') {
+        deleteCalls += 1;
+        return new Response(null, { status: 204 });
+      }
+
+      return jsonResponse({ message: `Unexpected request ${method} ${url.pathname}` }, 500);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/assessments',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': 'idem-assessment-500',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          document_id: 'doc-503'
+        })
+      },
+      createEnv()
+    );
+
+    expect(response.status).toBe(503);
+    expect(deleteCalls).toBe(1);
+  });
+
   it('lists current user assessments', async () => {
     const token = await signToken(['user']);
 

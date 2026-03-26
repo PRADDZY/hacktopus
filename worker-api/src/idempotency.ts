@@ -202,3 +202,16 @@ export const finalizeIdempotency = async ({
     }
   );
 };
+
+export const abandonIdempotency = async ({
+  supabase,
+  recordId
+}: {
+  supabase: SupabaseRestClient;
+  recordId: string;
+}): Promise<void> => {
+  await supabase.deleteOne('api_idempotency_keys', {
+    id: recordId,
+    state: 'in_progress'
+  });
+};

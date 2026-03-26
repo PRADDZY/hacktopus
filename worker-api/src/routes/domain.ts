@@ -2,6 +2,7 @@ import { Context, Hono } from 'hono';
 import { requireAdminAuth, requireUserAuth } from '../auth';
 import { failure, success, toApiStatus, type ApiStatus } from '../http';
 import {
+  abandonIdempotency,
   beginIdempotency,
   createIdempotencyHash,
   finalizeIdempotency,
@@ -302,6 +303,25 @@ const replayIdempotentResult = (
     return failure(c, replay.error, toApiStatus(replay.status, 400));
   }
   return success(c, replay.data, toApiStatus(replay.status, 200));
+};
+
+const abandonIdempotencyIfNeeded = async (
+  c: Context<AppEnv>,
+  idempotencyRecordId: string | null
+): Promise<void> => {
+  if (!idempotencyRecordId) {
+    return;
+  }
+
+  try {
+    const supabase = new SupabaseRestClient(c);
+    await abandonIdempotency({
+      supabase,
+      recordId: idempotencyRecordId
+    });
+  } catch {
+    // Best effort cleanup only.
+  }
 };
 
 const readNumber = (
@@ -963,10 +983,13 @@ routes.post('/applications', requireUserAuth, async (c) => {
           data: null,
           error: responseError
         });
+      } else if (status >= 500) {
+        await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
       }
       return failure(c, responseError, status);
     }
 
+    await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
     return failure(c, { code: 'internal_error', message: 'Failed to create application' }, 500);
   }
 });
@@ -1441,9 +1464,12 @@ routes.post('/documents', requireUserAuth, async (c) => {
           data: null,
           error: responseError
         });
+      } else if (status >= 500) {
+        await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
       }
       return failure(c, responseError, status);
     }
+    await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
     return failure(c, { code: 'internal_error', message: 'Failed to create document' }, 500);
   }
 });
@@ -1823,9 +1849,12 @@ routes.post('/assessments', requireUserAuth, async (c) => {
           data: null,
           error: responseError
         });
+      } else if (status >= 500) {
+        await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
       }
       return failure(c, responseError, status);
     }
+    await abandonIdempotencyIfNeeded(c, idempotencyRecordId);
     return failure(c, { code: 'internal_error', message: 'Failed to create assessment' }, 500);
   }
 });

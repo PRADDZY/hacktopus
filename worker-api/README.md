@@ -56,6 +56,7 @@ All endpoints return a single envelope:
 - Reusing the same key with the same payload replays the previous response.
 - Reusing the same key with a different payload returns `409 idempotency_conflict`.
 - Duplicate in-flight requests return `409 idempotency_in_progress`.
+- If a mutation fails with a server-side `5xx`, the in-progress key is released so clients can retry with the same key.
 
 ## JWT Verification (Supabase-First)
 
