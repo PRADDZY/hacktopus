@@ -14,16 +14,33 @@ export default function RoleGate({ requiredRole, children }: RoleGateProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { auth, hasRole, isAuthConfigured, isAuthReady } = useStore();
+  const normalizedPath = pathname || '/';
+  const isPublicAuthRoute =
+    normalizedPath === '/login' ||
+    normalizedPath === '/signup' ||
+    normalizedPath.startsWith('/auth/');
 
   useEffect(() => {
-    if (!isAuthConfigured || !isAuthReady || auth.isAuthenticated) {
+    if (!isAuthConfigured || !isAuthReady || auth.isAuthenticated || isPublicAuthRoute) {
       return;
     }
 
-    const nextPath = encodeURIComponent(pathname || '/');
+    const nextPath = encodeURIComponent(normalizedPath);
     const loginPath = `/login?role=${requiredRole}&next=${nextPath}`;
     router.replace(loginPath);
-  }, [auth.isAuthenticated, isAuthConfigured, isAuthReady, pathname, requiredRole, router]);
+  }, [
+    auth.isAuthenticated,
+    isAuthConfigured,
+    isAuthReady,
+    isPublicAuthRoute,
+    normalizedPath,
+    requiredRole,
+    router,
+  ]);
+
+  if (isPublicAuthRoute) {
+    return <>{children}</>;
+  }
 
   if (!isAuthConfigured) {
     return <>{children}</>;
