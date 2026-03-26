@@ -2,6 +2,14 @@
 
 This runbook assumes you are authenticated via CLI/MCP and are **not** reading tokens from local files.
 
+## 0) Cloudflare account prerequisite (one-time)
+
+Cloudflare Workers deploy requires a registered `workers.dev` subdomain in your account.
+
+Complete once in dashboard:
+
+`https://dash.cloudflare.com/<account-id>/workers/onboarding`
+
 ## 1) Verify CLI sessions
 
 ```powershell
@@ -81,8 +89,12 @@ $env:NEXT_PUBLIC_SUPABASE_ANON_KEY="<anon-key>"
 $env:NEXT_PUBLIC_APP_BASE_URL="https://<frontend-domain>"
 
 npm install
-npm run cf:deploy
+npm exec opennextjs-cloudflare build
+npm exec wrangler -- deploy --config wrangler.jsonc --experimental-autoconfig=false
 ```
+
+Note: on Windows, `npm run cf:deploy` can fail with an ESM path error.  
+Use the explicit `opennext build` + `wrangler deploy --experimental-autoconfig=false` sequence above.
 
 ## 6) Post-deploy smoke checks
 
