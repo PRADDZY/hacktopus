@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Button from '@/components/ui/Button';
+import { resolveApiBaseUrl } from '@/lib/apiBaseUrl';
 import {
   authenticateWithPasskey,
   isPasskeySupported,
@@ -45,7 +46,7 @@ export default function LoginPage() {
 
   const ensureAdminAccess = async (): Promise<boolean> => {
     const token = await getAccessToken();
-    const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+    const apiBase = resolveApiBaseUrl();
     if (!token || !apiBase) {
       return hasRole('admin');
     }

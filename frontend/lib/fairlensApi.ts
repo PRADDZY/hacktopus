@@ -16,11 +16,10 @@ import {
   WorkerDocumentItem,
   WorkerExtractionJobItem,
 } from '@/types';
+import { resolveApiBaseUrl } from '@/lib/apiBaseUrl';
 import { getAccessToken } from '@/lib/authClient';
 
-const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ??
-  'http://localhost:8787';
+const getApiBaseUrl = (): string => resolveApiBaseUrl();
 
 type ApiEnvelopeError = {
   code?: string;
@@ -277,7 +276,7 @@ const requestJson = async <T>({
     idempotencyKey
   });
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method,
     headers,
     cache,

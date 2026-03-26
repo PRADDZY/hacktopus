@@ -14,12 +14,14 @@ const root = path.resolve(__dirname, '..', '..');
 };
 
 const { run: runFormat } = require('./format.test');
+const { run: runApiBaseUrl } = require('./apiBaseUrl.test');
 const { run: runFairlensApi } = require('./fairlensApi.test');
 const { run: runDashboardMode } = require('./dashboardMode.test');
 const { run: runStorage } = require('./storage.test');
 
 const suites = [
   { name: 'formatCurrency', run: runFormat },
+  { name: 'apiBaseUrl', run: runApiBaseUrl },
   { name: 'fairlensApi', run: runFairlensApi },
   { name: 'dashboardMode', run: runDashboardMode },
   { name: 'storage', run: runStorage },

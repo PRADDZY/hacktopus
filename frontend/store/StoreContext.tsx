@@ -15,6 +15,7 @@ import {
   type AuthProvider,
   type AuthRole,
 } from '@/lib/authClient';
+import { resolveApiBaseUrl } from '@/lib/apiBaseUrl';
 import { safeJsonParse } from '@/lib/storage';
 
 type AuthActionOptions = {
@@ -148,9 +149,6 @@ const mapProviderUserToAppUser = (providerUser: Record<string, unknown>) => {
     roles,
   };
 };
-
-const resolveApiBaseUrl = (): string =>
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
 
 const readServerRoles = async (token: string): Promise<string[] | null> => {
   const apiBase = resolveApiBaseUrl();
