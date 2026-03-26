@@ -81,7 +81,8 @@ Auth0/JWKS mode remains available as fallback via:
 
 - `SUPABASE_URL`
 - `SUPABASE_AUTH_ISSUER` (optional, defaults to `${SUPABASE_URL}/auth/v1`)
-- `SUPABASE_JWT_SECRET` (required for Supabase JWT verification mode)
+- `SUPABASE_JWKS_URL` (optional, defaults to `${SUPABASE_AUTH_ISSUER}/.well-known/jwks.json`)
+- `SUPABASE_JWT_SECRET` (optional; used for HS256 fallback if provided)
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_REST_SCHEMA` (default `public`)
 - `RISK_APPROVAL_THRESHOLD` (default `0.55`)
@@ -169,3 +170,24 @@ DEMO_ADMIN_USER_ID=<admin-user-uuid> \
 DEMO_USER_USER_ID=<user-user-uuid> \
 npm run seed:demo
 ```
+
+## Demo-Ready Orchestration
+
+Provision/update demo auth users, map admin/user roles, run deterministic seed, and verify critical demo APIs:
+
+```bash
+SUPABASE_URL=https://<project-ref>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key> \
+SUPABASE_ANON_KEY=<anon-key> \
+DEMO_ADMIN_EMAIL=<admin-email> \
+DEMO_ADMIN_PASSWORD=<admin-password> \
+DEMO_USER_EMAIL=<user-email> \
+DEMO_USER_PASSWORD=<user-password> \
+SMOKE_BASE_URL=https://<worker-url> \
+npm run demo:ready
+```
+
+Optional flags:
+
+- `--no-reset` keeps existing seeded rows.
+- `--dry-run` prints planned actions only.

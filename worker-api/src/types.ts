@@ -17,6 +17,7 @@ export type AppBindings = {
   AUTH_SHARED_SECRET?: string;
   SUPABASE_JWT_SECRET?: string;
   SUPABASE_AUTH_ISSUER?: string;
+  SUPABASE_JWKS_URL?: string;
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   SUPABASE_REST_SCHEMA?: string;

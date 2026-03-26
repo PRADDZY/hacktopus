@@ -8,7 +8,8 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "smoke": "node scripts/demo-smoke.mjs",
-    "seed:demo": "node scripts/demo-seed.mjs"
+    "seed:demo": "node scripts/demo-seed.mjs",
+    "demo:ready": "node scripts/demo-ready.mjs"
   },
   "dependencies": {
     "hono": "^4.10.0",

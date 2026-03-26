@@ -65,9 +65,20 @@ create table if not exists public.assessment_overrides (
   created_at timestamptz not null default timezone('utc', now())
 );
 
-alter table public.documents
-  add constraint if not exists documents_extraction_job_id_fkey
-  foreign key (extraction_job_id) references public.extraction_jobs(id) on delete set null;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'documents_extraction_job_id_fkey'
+      and conrelid = 'public.documents'::regclass
+  ) then
+    alter table public.documents
+      add constraint documents_extraction_job_id_fkey
+      foreign key (extraction_job_id) references public.extraction_jobs(id) on delete set null;
+  end if;
+end;
+$$;
 
 create index if not exists idx_documents_owner_sub on public.documents(owner_sub);
 create index if not exists idx_documents_status on public.documents(status);

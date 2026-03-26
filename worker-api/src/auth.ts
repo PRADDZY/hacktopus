@@ -20,7 +20,7 @@ type AuthSettings = {
 const DEFAULT_ROLE_CLAIM = 'https://fairlens.ai/roles';
 const DEFAULT_ADMIN_ROLES = ['admin'];
 const DEFAULT_ALGORITHMS = ['RS256'];
-const DEFAULT_SUPABASE_ALGORITHMS = ['HS256'];
+const DEFAULT_SUPABASE_ALGORITHMS = ['ES256', 'RS256', 'HS256'];
 
 const asNonEmpty = (value: string | undefined): string | null => {
   const normalized = value?.trim();
@@ -55,12 +55,19 @@ const getAuthSettings = (c: Context<AppEnv>): AuthSettings => {
   const supabaseIssuer =
     asNonEmpty(c.env.SUPABASE_AUTH_ISSUER) ??
     (supabaseUrl ? `${supabaseUrl.replace(/\/$/, '')}/auth/v1` : null);
+  const explicitSupabaseIssuer = asNonEmpty(c.env.SUPABASE_AUTH_ISSUER);
+  const explicitSupabaseJwks = asNonEmpty(c.env.SUPABASE_JWKS_URL);
+  const supabaseJwksUrl =
+    explicitSupabaseJwks ??
+    (supabaseIssuer ? `${supabaseIssuer.replace(/\/$/, '')}/.well-known/jwks.json` : null);
   const supabaseAudience = asNonEmpty(c.env.AUTH_AUDIENCE) ?? 'authenticated';
-  const useSupabaseMode = Boolean(supabaseJwtSecret && supabaseIssuer);
+  const hasExplicitSupabaseAuth = Boolean(supabaseJwtSecret || explicitSupabaseIssuer || explicitSupabaseJwks);
+  const hasAuth0Config = Boolean(auth0Issuer && (auth0SharedSecret || auth0JwksUrl));
+  const useSupabaseMode = Boolean(supabaseIssuer && supabaseUrl && (hasExplicitSupabaseAuth || !hasAuth0Config));
 
   const issuer = useSupabaseMode ? supabaseIssuer : auth0Issuer;
   const audience = useSupabaseMode ? supabaseAudience : auth0Audience;
-  const jwksUrl = useSupabaseMode ? null : auth0JwksUrl;
+  const jwksUrl = useSupabaseMode ? supabaseJwksUrl : auth0JwksUrl;
   const sharedSecret = useSupabaseMode ? supabaseJwtSecret : auth0SharedSecret;
   const defaultRequired = Boolean(issuer && audience);
   const authRequired = parseBool(c.env.AUTH_REQUIRED, defaultRequired);
@@ -194,12 +201,18 @@ const decodeToken = async (token: string, settings: AuthSettings): Promise<JWTPa
   const audience = settings.audience ?? undefined;
 
   if (settings.sharedSecret) {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(settings.sharedSecret), {
-      issuer,
-      audience,
-      algorithms: settings.algorithms
-    });
-    return payload;
+    try {
+      const { payload } = await jwtVerify(token, new TextEncoder().encode(settings.sharedSecret), {
+        issuer,
+        audience,
+        algorithms: settings.algorithms
+      });
+      return payload;
+    } catch (error) {
+      if (!(settings.mode === 'supabase' && settings.jwksUrl)) {
+        throw error;
+      }
+    }
   }
 
   if (!settings.jwksUrl) {

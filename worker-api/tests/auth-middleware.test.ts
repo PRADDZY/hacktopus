@@ -1,4 +1,4 @@
-import { SignJWT } from 'jose';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../src/app';
 import type { AppEnv } from '../src/types';
@@ -211,6 +211,74 @@ describe('Cloudflare Worker auth middleware', () => {
         SUPABASE_URL,
         SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
         SUPABASE_JWT_SECRET
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as ApiEnvelope<{ ok: boolean; role: string }>;
+    expect(payload.error).toBeNull();
+    expect(payload.data).toEqual({ ok: true, role: 'admin' });
+  });
+
+  it('allows ES256 supabase token via JWKS and resolves admin role', async () => {
+    const { publicKey, privateKey } = await generateKeyPair('ES256');
+    const publicJwk = await exportJWK(publicKey);
+    const kid = 'test-supabase-kid';
+    const now = Math.floor(Date.now() / 1000);
+    const token = await new SignJWT({
+      email: 'supabase-user@example.com',
+      role: 'authenticated'
+    })
+      .setProtectedHeader({ alg: 'ES256', kid })
+      .setIssuer(SUPABASE_ISSUER)
+      .setAudience('authenticated')
+      .setSubject('22ca95e5-24a6-4f34-a4f4-6df65d0867d6')
+      .setIssuedAt(now)
+      .setExpirationTime(now + 3600)
+      .sign(privateKey);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        input instanceof URL
+          ? input
+          : typeof input === 'string'
+            ? new URL(input)
+            : new URL(input.url);
+
+      if (url.pathname.endsWith('/auth/v1/.well-known/jwks.json')) {
+        return new Response(JSON.stringify({ keys: [{ ...publicJwk, kid, use: 'sig', alg: 'ES256' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (url.pathname.includes('/rest/v1/user_roles')) {
+        return new Response(JSON.stringify([{ role: 'admin' }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await app.request(
+      '/v1/protected/admin',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
+      createEnv({
+        AUTH_ISSUER_BASE_URL: undefined,
+        AUTH_AUDIENCE: undefined,
+        AUTH_SHARED_SECRET: undefined,
+        AUTH_JWKS_URL: undefined,
+        AUTH_JWT_ALGORITHMS: undefined,
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        SUPABASE_JWT_SECRET: undefined
       })
     );
 

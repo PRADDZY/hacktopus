@@ -78,6 +78,30 @@ DEMO_USER_USER_ID=<user-user-uuid> \
 npm run seed:demo
 ```
 
+## 3.6) End-to-End Demo Readiness (Recommended)
+
+From `worker-api/`:
+
+```bash
+SUPABASE_URL=https://<project-ref>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key> \
+SUPABASE_ANON_KEY=<anon-key> \
+DEMO_ADMIN_EMAIL=<admin-email> \
+DEMO_ADMIN_PASSWORD=<admin-password> \
+DEMO_USER_EMAIL=<user-email> \
+DEMO_USER_PASSWORD=<user-password> \
+SMOKE_BASE_URL=https://<worker-url> \
+npm run demo:ready
+```
+
+What this runs in one command:
+
+- Creates or updates the admin and user in Supabase Auth.
+- Upserts `public.user_roles` for both accounts.
+- Runs deterministic seed data via `seed:demo`.
+- Logs in both users and validates auth + admin boundary routes.
+- Executes a statement-first assessment gate and confirms entries in admin list.
+
 ## 4) Demo Script (Judge Flow)
 
 1. User signup/login (Supabase auth).

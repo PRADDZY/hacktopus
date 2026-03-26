@@ -20,8 +20,7 @@ alter table public.transactions
   add column if not exists updated_at timestamptz not null default timezone('utc', now());
 
 create unique index if not exists idx_transactions_application_uuid
-  on public.transactions (application_uuid)
-  where application_uuid is not null;
+  on public.transactions (application_uuid);
 
 create index if not exists idx_transactions_user_sub
   on public.transactions (user_sub);
@@ -48,4 +47,3 @@ where
   or final_decision is null
   or decision_source is null
   or updated_at is null;
-
