@@ -16,7 +16,8 @@ Worker API (Cloudflare, Wave 1 foundation)
 
 ML Service (FastAPI)
 - Serves the risk scoring contract (`risk-v2.0.0`) with explainability reasons.
-- Supports CatBoost+FT ensemble artifacts and falls back to local baseline model artifacts.
+- Supports dual-target and ensemble artifact bundles with explicit runtime mode selection.
+- Legacy JSON fallback is opt-in via `ML_LEGACY_JSON_FALLBACK_ENABLED=true`.
 
 Database
 - Supabase Postgres for application, extraction, and audit domain data.
@@ -35,6 +36,16 @@ Checkout scoring uses real statement evidence only (parsed CSV transactions or c
 cd ml-service
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 9000 --reload
+```
+
+Environment variables (ml-service):
+
+```
+MODEL_RUNTIME_MODE=auto
+MODEL_PATH=./bnpl_cashflow_model.pkl
+MODEL_METADATA_PATH=./model_metadata.json
+MODEL_ARTIFACT_DIR=<optional-artifacts-dir>
+ML_LEGACY_JSON_FALLBACK_ENABLED=false
 ```
 
 ### 2) Backend (optional legacy mode)

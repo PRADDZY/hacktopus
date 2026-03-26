@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import joblib
 import pandas as pd
@@ -70,9 +70,11 @@ DEFAULT_REASON_CODE_CATALOG = [
     "INCOME_REGULARITY",
 ]
 DEFAULT_JSON_MODEL_NAME = "gig_bnpl_xgb_model.json"
+DEFAULT_RUNTIME_MODE = "auto"
 STATEMENT_FEATURE_SCHEMA_VERSION = "statement-feature-v1"
 PRIMARY_TARGET_COLUMN = "default_90d_proxy"
 SECONDARY_TARGET_COLUMN = "affordability_stress_proxy"
+RuntimeMode = Literal["auto", "dual_target", "ensemble", "single_model"]
 
 
 class PredictRequest(BaseModel):
@@ -167,6 +169,29 @@ def _resolve_model_paths() -> tuple[Path, Path]:
     metadata_path = Path(env_metadata_path) if env_metadata_path else local_metadata_path
 
     return model_path, metadata_path
+
+
+def _is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_legacy_json_fallback_enabled() -> bool:
+    return _is_truthy(os.getenv("ML_LEGACY_JSON_FALLBACK_ENABLED"))
+
+
+def _resolve_runtime_mode(value: str | None) -> RuntimeMode:
+    if value is None:
+        return "auto"
+
+    normalized = value.strip().lower()
+    if normalized in {"auto", "dual_target", "ensemble", "single_model"}:
+        return cast(RuntimeMode, normalized)
+
+    raise RuntimeError(
+        "Invalid MODEL_RUNTIME_MODE. Supported values: auto, dual_target, ensemble, single_model."
+    )
 
 
 def _load_metadata(metadata_path: Path) -> dict[str, Any]:
@@ -666,36 +691,65 @@ def _derive_reasons(payload: dict[str, Any]) -> list[PredictionReason]:
 async def lifespan(app: FastAPI):
     model_path, metadata_path = _resolve_model_paths()
     metadata = _load_metadata(metadata_path)
+    runtime_mode = _resolve_runtime_mode(os.getenv("MODEL_RUNTIME_MODE"))
     dual_target_bundle = _load_dual_target_bundle(metadata)
     ensemble_bundle = _load_ensemble_bundle(metadata)
 
     model_source = "pkl"
     model = None
-    if dual_target_bundle:
-        model_source = "dual_target"
-    elif ensemble_bundle:
-        model_source = "ensemble"
-    elif model_path.exists():
-        model = joblib.load(model_path)
-    else:
-        json_candidates = [
-            PROJECT_ROOT / DEFAULT_JSON_MODEL_NAME,
-        ]
-        json_model_path = next((path for path in json_candidates if path.exists()), None)
-        if json_model_path is None:
+    if runtime_mode == "dual_target":
+        if dual_target_bundle is None:
             raise RuntimeError(
-                f"Model file not found at {model_path}, and JSON fallback not found. "
-                f"Set MODEL_PATH or add {DEFAULT_JSON_MODEL_NAME}."
+                "MODEL_RUNTIME_MODE=dual_target requires promoted dual-target artifacts "
+                "(MODEL_ARTIFACT_DIR + dual_target metadata)."
             )
-        booster = xgb.Booster()
-        booster.load_model(str(json_model_path))
-        model = booster
-        model_source = "json"
+        model_source = "dual_target"
+    elif runtime_mode == "ensemble":
+        if ensemble_bundle is None:
+            raise RuntimeError(
+                "MODEL_RUNTIME_MODE=ensemble requires CatBoost+FT ensemble artifacts in MODEL_ARTIFACT_DIR."
+            )
+        model_source = "ensemble"
+    elif runtime_mode == "single_model":
+        if not model_path.exists():
+            raise RuntimeError(
+                f"MODEL_RUNTIME_MODE=single_model requires MODEL_PATH artifact, but file was not found: {model_path}."
+            )
+        model = joblib.load(model_path)
+        model_source = "pkl"
+    else:
+        if dual_target_bundle:
+            model_source = "dual_target"
+        elif ensemble_bundle:
+            model_source = "ensemble"
+        elif model_path.exists():
+            model = joblib.load(model_path)
+            model_source = "pkl"
+        elif _is_legacy_json_fallback_enabled():
+            json_candidates = [
+                PROJECT_ROOT / DEFAULT_JSON_MODEL_NAME,
+            ]
+            json_model_path = next((path for path in json_candidates if path.exists()), None)
+            if json_model_path is None:
+                raise RuntimeError(
+                    f"Model file not found at {model_path}, and JSON fallback not found. "
+                    f"Set MODEL_PATH or add {DEFAULT_JSON_MODEL_NAME}."
+                )
+            booster = xgb.Booster()
+            booster.load_model(str(json_model_path))
+            model = booster
+            model_source = "json_legacy"
+        else:
+            raise RuntimeError(
+                f"Model file not found at {model_path}. Legacy JSON fallback is disabled. "
+                "Provide MODEL_PATH or set MODEL_ARTIFACT_DIR with promoted artifacts."
+            )
 
     app.state.model = model
     app.state.dual_target_bundle = dual_target_bundle
     app.state.ensemble_bundle = ensemble_bundle
     app.state.model_source = model_source
+    app.state.runtime_mode = runtime_mode
     app.state.threshold = float(metadata["threshold"])
     app.state.model_feature_columns = list(metadata["feature_columns"])
     app.state.required_features = list(metadata["required_features"])

@@ -140,3 +140,19 @@ def test_predict_uses_dual_target_bundle_when_available(client_and_app):
     data = response.json()
     assert data['model_source'] == 'dual_target'
     assert data['risk_probability'] == 0.62
+
+
+def test_runtime_mode_defaults_to_auto(client_and_app):
+    _, ml_main = client_and_app
+    assert ml_main._resolve_runtime_mode(None) == 'auto'
+    assert ml_main._resolve_runtime_mode('ensemble') == 'ensemble'
+
+
+def test_runtime_mode_rejects_invalid_value(client_and_app):
+    _, ml_main = client_and_app
+    try:
+        ml_main._resolve_runtime_mode('invalid-mode')
+    except RuntimeError as exc:
+        assert 'Invalid MODEL_RUNTIME_MODE' in str(exc)
+    else:
+        raise AssertionError('Expected RuntimeError for invalid runtime mode')
