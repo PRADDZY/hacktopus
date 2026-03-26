@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500;700&family=Syne:wght@700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 14px;
+    background: #F8FAFC;
+    color: #0F172A;
+  }
+}
+
+@layer components {
+  .progress-bar {
+    @apply h-[7px] bg-slate-100 rounded-full overflow-hidden mt-1;
+  }
+  .progress-fill {
+    @apply h-full rounded-full transition-all duration-700;
+  }
+  .drop-zone {
+    @apply border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 bg-slate-50;
+  }
+  .drop-zone:hover, .drop-zone.dragging {
+    @apply border-accent bg-[rgba(0,245,196,0.06)];
+  }
+  .file-preview {
+    @apply border-2 border-accent rounded-2xl p-4 bg-[rgba(0,245,196,0.05)];
+  }
+  .thinking-dot {
+    @apply w-[5px] h-[5px] bg-slate-400 rounded-full inline-block mx-[2px];
+    animation: tdot 0.8s ease-in-out infinite;
+  }
+  .thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+  .thinking-dot:nth-child(3) { animation-delay: 0.30s; }
+}
+
+@keyframes tdot {
+  0%, 80%, 100% { transform: translateY(0); }
+  40%           { transform: translateY(-4px); }
+}
+@keyframes tslide {
+  from { transform: translateX(110%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.toast-slide { animation: tslide 0.3s ease forwards; }

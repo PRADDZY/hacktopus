@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"components\\\\AdminDashboard.tsx -> chart.js\":{\"id\":\"components\\\\AdminDashboard.tsx -> chart.js\",\"files\":[\"static/chunks/_app-pages-browser_node_modules_chart_js_dist_chart_js.js\"]}}"
