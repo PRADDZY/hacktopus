@@ -6,6 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf:upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "lint": "next lint",
     "test": "node scripts/run-unit-tests.mjs",
     "test:watch": "node scripts/run-unit-tests.mjs",
@@ -13,6 +17,7 @@
     "types:generate": "node scripts/generate-api-types.mjs"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "1.8.3",
     "@auth0/auth0-spa-js": "^2.18.0",
     "@supabase/supabase-js": "^2.100.0",
     "lucide-react": "^0.263.1",
@@ -33,6 +38,7 @@
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "wrangler": "4.76.0"
   }
 }

@@ -47,6 +47,7 @@ ENV/
 .env.*.local
 .dev.vars
 .mcp.json
+tokens.txt
 opencode.json
 FairLens_Render_Integration_Prompt.md
 .git-bare
@@ -75,6 +76,7 @@ yarn-error.log*
 .npm
 .yarn
 frontend/.next/
+frontend/.open-next/
 frontend/out/
 frontend/test-results/
 frontend/playwright-report/

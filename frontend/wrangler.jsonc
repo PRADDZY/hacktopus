@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fairlens-frontend",
+  "main": ".open-next/worker.js",
+  "account_id": "0f29b8c67d98ac571ea8874d8b3c7345",
+  "compatibility_date": "2026-03-26",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "fairlens-frontend"
+    }
+  ]
+}

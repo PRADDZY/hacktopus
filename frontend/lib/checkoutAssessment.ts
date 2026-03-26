@@ -137,7 +137,7 @@ export const runCheckoutAssessment = async ({
   const csvUpload = isCsvStatementFile(statementFile);
   let extractionStatus: 'queued' | 'processing' | 'completed' | 'failed' | null = null;
 
-  if (document.extraction_job_id) {
+  if (!csvUpload && document.extraction_job_id) {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const job = await fetchExtractionJob(document.extraction_job_id);
       extractionStatus = job.status;
@@ -148,7 +148,7 @@ export const runCheckoutAssessment = async ({
     }
   }
 
-  if (extractionStatus === 'failed') {
+  if (!csvUpload && extractionStatus === 'failed') {
     throw new Error('Statement extraction failed. Upload a clean statement or try CSV.');
   }
   if (!csvUpload && document.extraction_job_id && extractionStatus !== 'completed') {
