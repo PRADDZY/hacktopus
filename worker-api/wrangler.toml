@@ -13,6 +13,9 @@ AUTH_JWT_ALGORITHMS = "HS256"
 SUPABASE_REST_SCHEMA = "public"
 RISK_APPROVAL_THRESHOLD = "0.55"
 MODEL_VERSION = "worker-baseline-v1"
+MODEL_SCORING_ENDPOINT = "https://superhexagon2021--fairlens-ml-api-api.modal.run/predict"
+FEATURE_EXTRACTION_ENDPOINT = "https://superhexagon2021--fairlens-ml-api-api.modal.run/featureize/statement"
+MODAL_EXTRACTION_ENDPOINT = "https://superhexagon2021--fairlens-ml-api-api.modal.run/extract"
 IDEMPOTENCY_TTL_SECONDS = "86400"
 # Set WORKER_SCORING_FALLBACK_ENABLED="true" only for local resiliency testing.
 # For demo/prod, keep strict scoring by leaving fallback disabled.
