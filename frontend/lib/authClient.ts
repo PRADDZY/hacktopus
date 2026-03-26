@@ -55,6 +55,9 @@ type SignupInput = Credentials & {
   role?: AuthRole;
 };
 
+const DEFAULT_SUPABASE_URL = 'https://qwwgfdfdbseemoiwkxbk.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_bGxEICYMqZAhOik-MHIsMA_DWAOtnia';
+
 let auth0ClientPromise: Promise<Auth0Client | null> | null = null;
 let supabaseClientPromise: Promise<SupabaseClient | null> | null = null;
 
@@ -62,8 +65,8 @@ const authConfig: AuthConfig = {
   auth0Domain: process.env.NEXT_PUBLIC_AUTH0_DOMAIN,
   auth0ClientId: process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID,
   auth0Audience: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE,
-  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? DEFAULT_SUPABASE_URL,
+  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? DEFAULT_SUPABASE_PUBLISHABLE_KEY,
 };
 
 const isAuth0Configured = (): boolean =>

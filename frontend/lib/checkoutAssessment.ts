@@ -200,6 +200,9 @@ export const runCheckoutAssessment = async ({
 
 export const toCheckoutErrorMessage = (error: unknown): string => {
   if (isFairlensApiError(error)) {
+    if (error.status === 401) {
+      return 'Your session has expired. Please sign in and retry the credit check.';
+    }
     if (error.code === 'model_unavailable') {
       return 'Risk engine is temporarily unavailable. Please retry in a minute.';
     }
