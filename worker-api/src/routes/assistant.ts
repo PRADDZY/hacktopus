@@ -27,12 +27,21 @@ const CONTACT = {
   phone: '+91 98000 12345',
 };
 
+const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
 const asNonEmpty = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
   const normalized = value.trim();
   return normalized ? normalized : null;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
 };
 
 const toLower = (value: unknown): string => asNonEmpty(value)?.toLowerCase() ?? '';
@@ -169,10 +178,163 @@ const parseRemoteResponse = (payload: unknown): AssistantResponsePayload | null 
   };
 };
 
+const parseJsonObjectFromText = (text: string): Record<string, unknown> | null => {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const direct = (() => {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return asRecord(parsed);
+    } catch {
+      return null;
+    }
+  })();
+  if (direct) {
+    return direct;
+  }
+
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  if (withoutFence !== trimmed) {
+    try {
+      const parsed = JSON.parse(withoutFence);
+      return asRecord(parsed);
+    } catch {
+      // Continue with brace extraction.
+    }
+  }
+
+  const start = withoutFence.indexOf('{');
+  const end = withoutFence.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(withoutFence.slice(start, end + 1));
+    return asRecord(parsed);
+  } catch {
+    return null;
+  }
+};
+
+const parseOpenRouterResponse = (payload: unknown): AssistantResponsePayload | null => {
+  const root = asRecord(payload);
+  if (!root) {
+    return null;
+  }
+
+  const choices = Array.isArray(root.choices) ? root.choices : [];
+  for (const choice of choices) {
+    const choiceRecord = asRecord(choice);
+    if (!choiceRecord) {
+      continue;
+    }
+
+    const message = asRecord(choiceRecord.message);
+    const content = asNonEmpty(message?.content);
+    if (!content) {
+      continue;
+    }
+
+    const parsed = parseJsonObjectFromText(content);
+    if (!parsed) {
+      continue;
+    }
+    const remote = parseRemoteResponse(parsed);
+    if (remote) {
+      return remote;
+    }
+  }
+
+  return null;
+};
+
+const callOpenRouterModel = async (
+  env: AppEnv['Bindings'],
+  payload: Record<string, unknown>,
+  model: string
+): Promise<AssistantResponsePayload | null> => {
+  const apiKey = asNonEmpty(env.OPENROUTER_API_KEY);
+  if (!apiKey) {
+    return null;
+  }
+
+  const endpoint = asNonEmpty(env.OPENROUTER_CHAT_COMPLETIONS_URL) ?? OPENROUTER_CHAT_COMPLETIONS_URL;
+  const appUrl = asNonEmpty(env.OPENROUTER_SITE_URL);
+  const appName = asNonEmpty(env.OPENROUTER_APP_NAME);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (appUrl) {
+    headers['HTTP-Referer'] = appUrl;
+  }
+  if (appName) {
+    headers['X-Title'] = appName;
+  }
+
+  const requestBody = {
+    model,
+    temperature: 0.2,
+    max_tokens: 320,
+    response_format: { type: 'json_object' },
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are the FairLens app assistant. Return strict JSON with keys: reply, category, suggested_actions. category must be one of checkout|auth|emi|dashboard|security|general. suggested_actions is an array of objects with keys label, action, optional target. action must be navigate|retry|contact|none. Keep reply concise and practical. Do not include markdown.',
+      },
+      {
+        role: 'user',
+        content: JSON.stringify(payload),
+      },
+    ],
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const json = await response.json().catch(() => null);
+    return parseOpenRouterResponse(json);
+  } catch {
+    return null;
+  }
+};
+
 const resolveRemoteAssistant = async (
   env: AppEnv['Bindings'],
   payload: Record<string, unknown>
 ): Promise<AssistantResponsePayload | null> => {
+  const openRouterPrimaryModel = asNonEmpty(env.OPENROUTER_PRIMARY_MODEL);
+  if (openRouterPrimaryModel && asNonEmpty(env.OPENROUTER_API_KEY)) {
+    const primary = await callOpenRouterModel(env, payload, openRouterPrimaryModel);
+    if (primary) {
+      return primary;
+    }
+
+    const openRouterFallbackModel = asNonEmpty(env.OPENROUTER_FALLBACK_MODEL);
+    if (openRouterFallbackModel && openRouterFallbackModel !== openRouterPrimaryModel) {
+      const fallback = await callOpenRouterModel(env, payload, openRouterFallbackModel);
+      if (fallback) {
+        return fallback;
+      }
+    }
+  }
+
   const endpoint = asNonEmpty(env.AI_ASSISTANT_ENDPOINT);
   if (!endpoint) {
     return null;

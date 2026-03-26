@@ -25,6 +25,11 @@ IDEMPOTENCY_TTL_SECONDS = "86400"
 # FEATURE_EXTRACTION_ENDPOINT can point to ML /featureize/statement (defaults from MODEL_SCORING_ENDPOINT if omitted).
 # MODAL_EXTRACTION_ENDPOINT should be set per environment if using async extraction dispatch.
 # AI_ASSISTANT_ENDPOINT can point to a remote LLM service; if omitted, worker uses rule-based assistant.
+# For OpenRouter assistant routing, set:
+#   OPENROUTER_PRIMARY_MODEL = "provider/model"
+#   OPENROUTER_FALLBACK_MODEL = "provider/model" (optional)
+#   OPENROUTER_SITE_URL = "https://your-frontend.example.com" (optional, recommended)
+#   OPENROUTER_APP_NAME = "FairLens Demo" (optional)
 # Set secrets with:
 #   wrangler secret put SUPABASE_JWT_SECRET
 #   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
@@ -33,3 +38,4 @@ IDEMPOTENCY_TTL_SECONDS = "86400"
 #   wrangler secret put MODAL_EXTRACTION_TOKEN
 #   wrangler secret put EXTRACTION_CALLBACK_SECRET
 #   wrangler secret put AI_ASSISTANT_TOKEN
+#   wrangler secret put OPENROUTER_API_KEY

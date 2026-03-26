@@ -99,6 +99,12 @@ Auth0/JWKS mode remains available as fallback via:
 - `EXTRACTION_CALLBACK_SECRET` (required for callback endpoint verification)
 - `AI_ASSISTANT_ENDPOINT` (optional remote assistant endpoint; fallback is worker rule-based assistant)
 - `AI_ASSISTANT_TOKEN` (optional bearer token for remote assistant endpoint)
+- `OPENROUTER_API_KEY` (optional; enables OpenRouter-backed assistant routing)
+- `OPENROUTER_PRIMARY_MODEL` (required when OpenRouter assistant is enabled)
+- `OPENROUTER_FALLBACK_MODEL` (optional fallback model if primary call fails)
+- `OPENROUTER_CHAT_COMPLETIONS_URL` (optional override; defaults to OpenRouter `/chat/completions`)
+- `OPENROUTER_SITE_URL` (optional referer header for OpenRouter attribution)
+- `OPENROUTER_APP_NAME` (optional app title header for OpenRouter attribution)
 
 When strict scoring is active and ML scoring is unavailable, Worker returns `503 model_unavailable` for scoring routes.
 

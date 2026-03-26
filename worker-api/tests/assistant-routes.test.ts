@@ -141,4 +141,113 @@ describe('Assistant routes', () => {
     expect(payload.data.source).toBe('remote');
     expect(payload.data.reply).toBe('Remote assistant answer');
   });
+
+  it('uses OpenRouter primary model when configured', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  reply: 'OpenRouter primary answer',
+                  category: 'general',
+                  suggested_actions: [{ label: 'Open support', action: 'navigate', target: '/support' }],
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/assistant/query',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'help me',
+        }),
+      },
+      createEnv({
+        OPENROUTER_API_KEY: 'or-test-key',
+        OPENROUTER_PRIMARY_MODEL: 'openrouter/primary-model',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      data: { source: string; reply: string };
+      error: unknown;
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.source).toBe('remote');
+    expect(payload.data.reply).toBe('OpenRouter primary answer');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to OpenRouter fallback model when primary model fails', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('primary unavailable', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    reply: 'OpenRouter fallback answer',
+                    category: 'auth',
+                    suggested_actions: [{ label: 'Open login', action: 'navigate', target: '/login' }],
+                  }),
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/assistant/query',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'login issue',
+          context: { page: '/login' },
+        }),
+      },
+      createEnv({
+        OPENROUTER_API_KEY: 'or-test-key',
+        OPENROUTER_PRIMARY_MODEL: 'openrouter/primary-model',
+        OPENROUTER_FALLBACK_MODEL: 'openrouter/fallback-model',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      data: { source: string; reply: string };
+      error: unknown;
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.source).toBe('remote');
+    expect(payload.data.reply).toBe('OpenRouter fallback answer');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
