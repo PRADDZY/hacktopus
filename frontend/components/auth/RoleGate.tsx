@@ -21,10 +21,7 @@ export default function RoleGate({ requiredRole, children }: RoleGateProps) {
     }
 
     const nextPath = encodeURIComponent(pathname || '/');
-    const loginPath =
-      requiredRole === 'admin'
-        ? `/admin/login?next=${nextPath}`
-        : `/login?next=${nextPath}`;
+    const loginPath = `/login?role=${requiredRole}&next=${nextPath}`;
     router.replace(loginPath);
   }, [auth.isAuthenticated, isAuthConfigured, isAuthReady, pathname, requiredRole, router]);
 
@@ -65,4 +62,3 @@ export default function RoleGate({ requiredRole, children }: RoleGateProps) {
 
   return <>{children}</>;
 }
-

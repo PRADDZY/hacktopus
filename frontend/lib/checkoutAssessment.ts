@@ -4,7 +4,7 @@ import {
   fetchExtractionJob,
   isFairlensApiError
 } from '@/lib/fairlensApi';
-import type { StatementTransactionInput } from '@/types';
+import type { PredictionReason, StatementTransactionInput } from '@/types';
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -126,6 +126,8 @@ export const runCheckoutAssessment = async ({
   decision: 'Approve' | 'Decline';
   riskProbability: number;
   decisionSource: 'auto' | 'manual_override';
+  modelSource: string | null;
+  reasons: PredictionReason[];
 }> => {
   const document = await createStatementDocument({
     storage_key: `uploads/${Date.now()}-${statementFile?.name ?? 'statement-upload'}`,
@@ -190,7 +192,9 @@ export const runCheckoutAssessment = async ({
     assessmentId: assessment.id,
     decision: assessment.final_decision,
     riskProbability: assessment.risk_probability,
-    decisionSource: assessment.decision_source
+    decisionSource: assessment.decision_source,
+    modelSource: assessment.model_source ?? null,
+    reasons: assessment.reasons ?? []
   };
 };
 

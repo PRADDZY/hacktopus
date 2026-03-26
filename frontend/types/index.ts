@@ -236,6 +236,16 @@ export interface CreateAssessmentRequest {
   statement?: StatementFeaturePayload;
 }
 
+export type PredictionReasonDirection = 'up' | 'down';
+
+export interface PredictionReason {
+  code: string;
+  feature: string;
+  direction: PredictionReasonDirection;
+  impact: number;
+  message: string;
+}
+
 export interface WorkerAssessmentItem {
   id: string;
   owner_sub: string;
@@ -245,8 +255,20 @@ export interface WorkerAssessmentItem {
   auto_decision: 'Approve' | 'Decline';
   final_decision: 'Approve' | 'Decline';
   decision_source: 'auto' | 'manual_override';
+  model_source?: string;
+  reasons?: PredictionReason[];
+  created_at?: string;
+  updated_at?: string;
   reviewed_by?: string | null;
   override_reason?: string | null;
+}
+
+export interface WorkerAdminAssessmentsResponse {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+  items: WorkerAssessmentItem[];
 }
 
 export type BackendApplicationItem = BackendLogItem & {

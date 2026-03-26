@@ -24,6 +24,15 @@ import type { AppEnv } from '../types';
 
 type Decision = 'Approve' | 'Decline';
 type DecisionSource = 'auto' | 'manual_override';
+type PredictionReasonDirection = 'up' | 'down';
+
+type PredictionReason = {
+  code: string;
+  feature: string;
+  direction: PredictionReasonDirection;
+  impact: number;
+  message: string;
+};
 
 type DocumentRecord = {
   id: string;
@@ -540,6 +549,100 @@ type ScoringOutcome = {
   decision: Decision;
   modelVersion: string;
   source: string;
+  reasons: PredictionReason[];
+};
+
+const asDirection = (value: unknown): PredictionReasonDirection | null => {
+  if (value === 'up' || value === 'down') {
+    return value;
+  }
+  return null;
+};
+
+const parsePredictionReasons = (value: unknown): PredictionReason[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const parsed: PredictionReason[] = [];
+  for (const candidate of value) {
+    const row = asRecord(candidate);
+    if (!row) {
+      continue;
+    }
+
+    const code = asNonEmpty(row.code);
+    const feature = asNonEmpty(row.feature);
+    const direction = asDirection(row.direction);
+    const impact = toFiniteNumber(row.impact);
+    const message = asNonEmpty(row.message);
+
+    if (!code || !feature || !direction || impact === null || !message) {
+      continue;
+    }
+
+    parsed.push({
+      code,
+      feature,
+      direction,
+      impact: Number(Math.max(0, impact).toFixed(6)),
+      message
+    });
+  }
+
+  return parsed.slice(0, 5);
+};
+
+const buildFallbackReasons = (payload: Record<string, unknown>): PredictionReason[] => {
+  const totalBurdenRatio = clamp(readNumber(payload, ['total_burden_ratio'], 0.5));
+  const stressIndex = clamp(readNumber(payload, ['stress_index'], 0.5));
+  const bufferRatio = clamp(readNumber(payload, ['buffer_ratio'], 0.2));
+  const inflowVolatility = clamp(readNumber(payload, ['inflow_volatility_90d'], 0.25));
+
+  const reasons: PredictionReason[] = [
+    {
+      code: totalBurdenRatio >= 0.58 ? 'HIGH_BURDEN_RATIO' : 'BURDEN_RATIO_STABLE',
+      feature: 'total_burden_ratio',
+      direction: totalBurdenRatio >= 0.58 ? 'up' : 'down',
+      impact: Number(Math.abs(totalBurdenRatio - 0.5).toFixed(6)),
+      message:
+        totalBurdenRatio >= 0.58
+          ? 'Monthly burden is high relative to inflow.'
+          : 'Monthly burden remains within a manageable range.'
+    },
+    {
+      code: stressIndex >= 0.56 ? 'CASHFLOW_STRESS_HIGH' : 'CASHFLOW_STRESS_CONTROLLED',
+      feature: 'stress_index',
+      direction: stressIndex >= 0.56 ? 'up' : 'down',
+      impact: Number(Math.abs(stressIndex - 0.5).toFixed(6)),
+      message:
+        stressIndex >= 0.56
+          ? 'Cash-flow stress indicates elevated repayment pressure.'
+          : 'Cash-flow stress appears controlled for the requested amount.'
+    },
+    {
+      code: bufferRatio <= 0.14 ? 'LOW_BUFFER_RATIO' : 'BUFFER_RATIO_HEALTHY',
+      feature: 'buffer_ratio',
+      direction: bufferRatio <= 0.14 ? 'up' : 'down',
+      impact: Number(Math.abs(bufferRatio - 0.2).toFixed(6)),
+      message:
+        bufferRatio <= 0.14
+          ? 'Liquidity buffer is low for the selected tenure.'
+          : 'Liquidity buffer supports short-term repayment stability.'
+    },
+    {
+      code: inflowVolatility >= 0.4 ? 'INFLOW_VOLATILITY_HIGH' : 'INFLOW_VOLATILITY_STABLE',
+      feature: 'inflow_volatility_90d',
+      direction: inflowVolatility >= 0.4 ? 'up' : 'down',
+      impact: Number(Math.abs(inflowVolatility - 0.3).toFixed(6)),
+      message:
+        inflowVolatility >= 0.4
+          ? 'Income inflow volatility is elevated.'
+          : 'Income inflow volatility appears stable.'
+    }
+  ];
+
+  return reasons.sort((a, b) => b.impact - a.impact).slice(0, 3);
 };
 
 const buildFallbackScoringOutcome = (
@@ -551,7 +654,8 @@ const buildFallbackScoringOutcome = (
     riskProbability: fallbackRisk,
     decision: toDecision(fallbackRisk, getThreshold(c.env)),
     modelVersion: 'worker-heuristic-fallback-v2',
-    source: 'worker_fallback'
+    source: 'worker_fallback',
+    reasons: buildFallbackReasons(normalizedPayload)
   };
 };
 
@@ -600,11 +704,13 @@ const scoreAssessment = async (
     const explicitDecision = normalizeDecision(body.decision);
     const decision = explicitDecision ?? toDecision(riskProbability, getThreshold(c.env));
     const modelVersion = asNonEmpty(body.model_version) ?? getModelVersion(c.env);
+    const reasons = parsePredictionReasons(body.reasons);
     return {
       riskProbability: Number(riskProbability.toFixed(6)),
       decision,
       modelVersion,
-      source: 'ml_service'
+      source: 'ml_service',
+      reasons: reasons.length > 0 ? reasons : buildFallbackReasons(normalizedPayload)
     };
   } catch (error) {
     if (error instanceof ModelScoringError) {
@@ -1765,7 +1871,7 @@ routes.post('/assessments', requireUserAuth, async (c) => {
     const scoring = await scoreAssessment(c, extractedFeature.payload);
     const threshold = getThreshold(c.env);
 
-    const responseData = await supabase.insertOne<AssessmentRecord>('assessments', {
+    const insertedAssessment = await supabase.insertOne<AssessmentRecord>('assessments', {
       owner_sub: user.subject,
       document_id: documentId,
       extracted_feature_id: extractedFeature.id,
@@ -1776,6 +1882,11 @@ routes.post('/assessments', requireUserAuth, async (c) => {
       threshold,
       model_version: scoring.modelVersion
     });
+    const responseData = {
+      ...insertedAssessment,
+      model_source: scoring.source,
+      reasons: scoring.reasons
+    };
 
     await finalizeMutationSuccess({
       c,

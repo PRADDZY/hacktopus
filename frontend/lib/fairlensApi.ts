@@ -12,6 +12,7 @@ import {
   CreateApplicationRequest,
   EMIRequest,
   WorkerAssessmentItem,
+  WorkerAdminAssessmentsResponse,
   WorkerDocumentItem,
   WorkerExtractionJobItem,
 } from '@/types';
@@ -341,6 +342,17 @@ export async function createAssessment(
     payload,
     isMutation: true,
     idempotencyKey
+  });
+}
+
+export async function fetchAdminAssessments(
+  page = 1,
+  limit = 20
+): Promise<WorkerAdminAssessmentsResponse> {
+  return requestJson<WorkerAdminAssessmentsResponse>({
+    label: 'Admin assessments',
+    path: `/v1/admin/assessments?page=${page}&limit=${limit}`,
+    cache: 'no-store'
   });
 }
 

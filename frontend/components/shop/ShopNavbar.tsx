@@ -1,21 +1,16 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShoppingBag } from 'lucide-react';
-import { useStore } from '@/store/StoreContext';
 
 const navItems = [
-  { label: 'Product', href: '/product/mbp-m3-max-001' },
+  { label: 'Shop', href: '/shop' },
   { label: 'Checkout', href: '/checkout' },
-  { label: 'Orders', href: '/orders' },
-  { label: 'Support', href: '/support' },
+  { label: 'Bank Dashboard', href: '/dashboard' },
 ];
 
 export default function ShopNavbar() {
   const pathname = usePathname();
-  const { cart } = useStore();
-  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur">
@@ -25,10 +20,10 @@ export default function ShopNavbar() {
             FL
           </div>
           <div>
-            <Link href="/" className="text-lg font-semibold">
+            <Link href="/shop" className="text-lg font-semibold">
               FairLens Store
             </Link>
-            <div className="text-xs text-muted uppercase tracking-[0.2em]">Responsible BNPL</div>
+            <div className="text-xs text-muted uppercase tracking-[0.2em]">Demo Checkout</div>
           </div>
         </div>
 
@@ -47,20 +42,9 @@ export default function ShopNavbar() {
           })}
         </nav>
 
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="link-muted hidden sm:inline">
-            Bank Dashboard
-          </Link>
-          <Link href="/cart" className="relative flex items-center gap-2 text-sm font-semibold">
-            <ShoppingBag className="h-5 w-5" />
-            Cart
-            {cartCount > 0 && (
-              <span className="absolute -right-3 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-xs font-semibold text-white">
-                {cartCount}
-              </span>
-            )}
-          </Link>
-        </div>
+        <Link href="/login" className="btn-outline px-4 py-2 text-xs font-semibold">
+          Switch Account
+        </Link>
       </div>
     </header>
   );

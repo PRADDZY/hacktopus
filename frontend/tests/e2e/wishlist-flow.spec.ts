@@ -1,25 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-test.beforeEach(async ({ page }) => {
+test('legacy routes redirect to demo entry points', async ({ page }) => {
   await page.goto('/');
-  await page.evaluate(() => window.localStorage.clear());
-});
+  await page.waitForURL('**/shop');
 
-test('saves a product to the wishlist', async ({ page }) => {
   await page.goto('/product/mbp-m3-max-001');
-  await page.getByRole('button', { name: 'Save to wishlist' }).click();
-  await page.waitForFunction(() => {
-    const raw = window.localStorage.getItem('fairlens-store-v1');
-    if (!raw) return false;
-    try {
-      const data = JSON.parse(raw);
-      return Array.isArray(data.wishlist) && data.wishlist.length > 0;
-    } catch {
-      return false;
-    }
-  });
+  await page.waitForURL('**/shop');
 
-  await page.goto('/wishlist');
-  await expect(page.getByRole('heading', { name: 'Saved items' })).toBeVisible();
-  await expect(page.getByText('MacBook Pro 16-inch M3 Max')).toBeVisible();
+  await page.goto('/admin/login');
+  await page.waitForURL('**/login?role=admin');
 });
