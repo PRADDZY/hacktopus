@@ -255,6 +255,35 @@ const parseOpenRouterResponse = (payload: unknown): AssistantResponsePayload | n
   return null;
 };
 
+const extractOpenRouterTextReply = (payload: unknown): string | null => {
+  const root = asRecord(payload);
+  if (!root) {
+    return null;
+  }
+
+  const choices = Array.isArray(root.choices) ? root.choices : [];
+  for (const choice of choices) {
+    const choiceRecord = asRecord(choice);
+    if (!choiceRecord) {
+      continue;
+    }
+    const message = asRecord(choiceRecord.message);
+    const content = asNonEmpty(message?.content);
+    if (content) {
+      return content;
+    }
+  }
+
+  return null;
+};
+
+const sanitizeOpenRouterReply = (value: string): string =>
+  value
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const callOpenRouterModel = async (
   env: AppEnv['Bindings'],
   payload: Record<string, unknown>,
@@ -283,13 +312,12 @@ const callOpenRouterModel = async (
   const requestBody = {
     model,
     temperature: 0.2,
-    max_tokens: 320,
-    response_format: { type: 'json_object' },
+    max_tokens: 420,
     messages: [
       {
         role: 'system',
         content:
-          'You are the FairLens app assistant. Return strict JSON with keys: reply, category, suggested_actions. category must be one of checkout|auth|emi|dashboard|security|general. suggested_actions is an array of objects with keys label, action, optional target. action must be navigate|retry|contact|none. Keep reply concise and practical. Do not include markdown.',
+          'You are the FairLens app assistant. Give concise practical help in 1-2 sentences. If possible, return JSON with keys reply, category, suggested_actions. category should be one of checkout|auth|emi|dashboard|security|general. suggested_actions items should use action navigate|retry|contact|none.',
       },
       {
         role: 'user',
@@ -309,7 +337,42 @@ const callOpenRouterModel = async (
     }
 
     const json = await response.json().catch(() => null);
-    return parseOpenRouterResponse(json);
+    const context = asRecord(payload.context);
+    const page = toLower(context?.page);
+    const user = asRecord(payload.user);
+    const roles = Array.isArray(user?.roles)
+      ? user.roles.filter((role): role is string => typeof role === 'string')
+      : [];
+    const isAdmin =
+      user?.is_admin === true || roles.some((role) => role.trim().toLowerCase() === 'admin');
+    const prompt = asNonEmpty(payload.message) ?? '';
+
+    const structured = parseOpenRouterResponse(json);
+    if (structured) {
+      if (structured.suggested_actions.length > 0) {
+        return structured;
+      }
+      return {
+        ...structured,
+        suggested_actions: buildActions(structured.category, isAdmin),
+      };
+    }
+
+    const textReply = extractOpenRouterTextReply(json);
+    const reply = textReply ? sanitizeOpenRouterReply(textReply) : null;
+    if (!reply) {
+      return null;
+    }
+
+    const category = detectCategory(`${prompt} ${reply}`, page);
+
+    return {
+      reply: reply.slice(0, 700),
+      category,
+      suggested_actions: buildActions(category, isAdmin),
+      escalation: CONTACT,
+      source: 'remote',
+    };
   } catch {
     return null;
   }

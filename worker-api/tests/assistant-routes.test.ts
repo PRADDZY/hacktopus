@@ -250,4 +250,108 @@ describe('Assistant routes', () => {
     expect(payload.data.reply).toBe('OpenRouter fallback answer');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('uses OpenRouter plain text response when model does not return JSON payload', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: 'Try uploading a 3-month statement CSV and retry the check from checkout.',
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/assistant/query',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'statement upload failed',
+          context: { page: '/checkout' },
+        }),
+      },
+      createEnv({
+        OPENROUTER_API_KEY: 'or-test-key',
+        OPENROUTER_PRIMARY_MODEL: 'openrouter/primary-model',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      data: { source: string; reply: string; category: string };
+      error: unknown;
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.source).toBe('remote');
+    expect(payload.data.category).toBe('checkout');
+    expect(payload.data.reply).toContain('statement CSV');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('hydrates suggested actions when OpenRouter JSON omits them', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  reply: 'Open checkout and retry.',
+                  category: 'checkout',
+                  suggested_actions: [],
+                }),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await app.request(
+      '/v1/assistant/query',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'need help at checkout',
+          context: { page: '/checkout' },
+        }),
+      },
+      createEnv({
+        OPENROUTER_API_KEY: 'or-test-key',
+        OPENROUTER_PRIMARY_MODEL: 'openrouter/primary-model',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      data: { source: string; category: string; suggested_actions: Array<{ action: string }> };
+      error: unknown;
+    };
+    expect(payload.error).toBeNull();
+    expect(payload.data.source).toBe('remote');
+    expect(payload.data.category).toBe('checkout');
+    expect(payload.data.suggested_actions.length).toBeGreaterThan(0);
+    expect(payload.data.suggested_actions.some((item) => item.action === 'retry')).toBe(true);
+  });
 });

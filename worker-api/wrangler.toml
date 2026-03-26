@@ -18,6 +18,10 @@ MODEL_VERSION = "worker-baseline-v1"
 MODEL_SCORING_ENDPOINT = "https://superhexagon2021--fairlens-ml-api-api.modal.run/predict"
 FEATURE_EXTRACTION_ENDPOINT = "https://superhexagon2021--fairlens-ml-api-api.modal.run/featureize/statement"
 MODAL_EXTRACTION_ENDPOINT = "https://superhexagon2021--fairlens-ml-api-api.modal.run/extract"
+OPENROUTER_PRIMARY_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+OPENROUTER_FALLBACK_MODEL = "minimax/minimax-m2.5:free"
+OPENROUTER_SITE_URL = "https://fairlens-frontend.dpratik3005.workers.dev"
+OPENROUTER_APP_NAME = "FairLens Demo"
 IDEMPOTENCY_TTL_SECONDS = "86400"
 # Set WORKER_SCORING_FALLBACK_ENABLED="true" only for local resiliency testing.
 # For demo/prod, keep strict scoring by leaving fallback disabled.
