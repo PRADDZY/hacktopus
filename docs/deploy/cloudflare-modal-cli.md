@@ -92,7 +92,11 @@ npm install
 npm run cf:deploy
 ```
 
-`cf:deploy` now applies a post-build Windows patch for the OpenNext generated handler before running Wrangler deploy.
+`cf:deploy` now:
+- builds OpenNext bundle
+- applies a Windows runtime patch to generated handler
+- syncs `.dev.vars` into Worker secrets (includes `NEXTJS_ENV`)
+- runs Wrangler deploy
 
 ## 6) Post-deploy smoke checks
 
