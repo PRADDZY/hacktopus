@@ -18,6 +18,7 @@ const createEnv = (overrides: Partial<AppEnv['Bindings']> = {}): AppEnv['Binding
   AUTH_ADMIN_ROLES: 'admin',
   SUPABASE_URL: 'https://supabase.example.co',
   SUPABASE_SERVICE_ROLE_KEY: 'supabase-service-role',
+  WORKER_SCORING_FALLBACK_ENABLED: 'true',
   ...overrides
 });
 
@@ -990,6 +991,40 @@ describe('Worker domain routes', () => {
     expect(payload.data.application_uuid).toBe('app-123');
     expect(payload.data.final_decision).toBe('Approve');
     expect(payload.data.card_last_four_masked).toBe('****1234');
+  });
+
+  it('returns model_unavailable in strict mode when scoring endpoint is missing', async () => {
+    const token = await signToken(['user']);
+
+    const response = await app.request(
+      '/v1/applications',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          order_amount_inr: 45000,
+          tenure_months: 6,
+          bank: 'HDFC Bank',
+          monthly_income_inr: 90000,
+          card_type: 'credit',
+          card_last_four: '1234'
+        })
+      },
+      createEnv({
+        WORKER_SCORING_FALLBACK_ENABLED: 'false'
+      })
+    );
+
+    expect(response.status).toBe(503);
+    const payload = (await response.json()) as {
+      data: null;
+      error: { code: string; message: string };
+    };
+    expect(payload.data).toBeNull();
+    expect(payload.error.code).toBe('model_unavailable');
   });
 
   it('lists admin applications with status and search filters', async () => {

@@ -13,6 +13,8 @@ SUPABASE_REST_SCHEMA = "public"
 RISK_APPROVAL_THRESHOLD = "0.55"
 MODEL_VERSION = "worker-baseline-v1"
 IDEMPOTENCY_TTL_SECONDS = "86400"
+# Set WORKER_SCORING_FALLBACK_ENABLED="true" only for local resiliency testing.
+# For demo/prod, keep strict scoring by leaving fallback disabled.
 # MODEL_SCORING_ENDPOINT should point to ML service base URL or /predict URL for assessment scoring.
 # FEATURE_EXTRACTION_ENDPOINT can point to ML /featureize/statement (defaults from MODEL_SCORING_ENDPOINT if omitted).
 # MODAL_EXTRACTION_ENDPOINT should be set per environment if using async extraction dispatch.

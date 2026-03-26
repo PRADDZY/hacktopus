@@ -85,8 +85,9 @@ Auth0/JWKS mode remains available as fallback via:
 - `SUPABASE_REST_SCHEMA` (default `public`)
 - `RISK_APPROVAL_THRESHOLD` (default `0.55`)
 - `MODEL_VERSION` (default `worker-baseline-v1`)
+- `WORKER_SCORING_FALLBACK_ENABLED` (default `false`; enable only for local/dev resiliency testing)
 - `IDEMPOTENCY_TTL_SECONDS` (default `86400`)
-- `MODEL_SCORING_ENDPOINT` (optional, points to ML `/predict`; if absent worker uses local fallback heuristic)
+- `MODEL_SCORING_ENDPOINT` (required in strict mode; points to ML `/predict`)
 - `MODEL_SCORING_TOKEN` (optional bearer token for ML scoring endpoint)
 - `FEATURE_EXTRACTION_ENDPOINT` (optional, points to ML `/featureize/statement`; defaults from `MODEL_SCORING_ENDPOINT` when available)
 - `FEATURE_EXTRACTION_TOKEN` (optional bearer token for feature extraction endpoint, falls back to `MODEL_SCORING_TOKEN`)
@@ -95,6 +96,8 @@ Auth0/JWKS mode remains available as fallback via:
 - `EXTRACTION_CALLBACK_SECRET` (required for callback endpoint verification)
 - `AI_ASSISTANT_ENDPOINT` (optional remote assistant endpoint; fallback is worker rule-based assistant)
 - `AI_ASSISTANT_TOKEN` (optional bearer token for remote assistant endpoint)
+
+When strict scoring is active and ML scoring is unavailable, Worker returns `503 model_unavailable` for scoring routes.
 
 ## Admin Assessment Filters
 

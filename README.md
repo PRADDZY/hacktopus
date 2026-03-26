@@ -12,6 +12,7 @@ Backend (FastAPI)
 
 Worker API (Cloudflare, Wave 1 foundation)
 - Primary runtime API for checkout/admin domain, auth guardrails, and assistant endpoint.
+- Strict scoring mode is default; heuristic fallback is opt-in via `WORKER_SCORING_FALLBACK_ENABLED=true`.
 
 ML Service (FastAPI)
 - Serves the risk scoring contract (`risk-v2.0.0`) with explainability reasons.

@@ -1,6 +1,6 @@
 import { Context, Hono } from 'hono';
 import { requireAdminAuth, requireUserAuth } from '../auth';
-import { failure, success, toApiStatus } from '../http';
+import { failure, success, toApiStatus, type ApiStatus } from '../http';
 import {
   beginIdempotency,
   createIdempotencyHash,
@@ -187,6 +187,14 @@ const getModelScoringEndpoint = (env: AppEnv['Bindings']): string | null =>
 
 const getModelScoringToken = (env: AppEnv['Bindings']): string | null =>
   asNonEmpty(env.MODEL_SCORING_TOKEN);
+
+const isWorkerScoringFallbackEnabled = (env: AppEnv['Bindings']): boolean => {
+  const raw = asNonEmpty(env.WORKER_SCORING_FALLBACK_ENABLED);
+  if (!raw) {
+    return false;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
+};
 
 const getFeatureExtractionEndpoint = (env: AppEnv['Bindings']): string | null => {
   const explicit = asNonEmpty(env.FEATURE_EXTRACTION_ENDPOINT);
@@ -509,6 +517,18 @@ const computeHeuristicRiskProbability = (payload: Record<string, unknown>): numb
 const toDecision = (riskProbability: number, threshold: number): Decision =>
   riskProbability >= threshold ? 'Decline' : 'Approve';
 
+class ModelScoringError extends Error {
+  readonly status: ApiStatus;
+  readonly code: string;
+
+  constructor(message: string, status: ApiStatus = 503, code = 'model_unavailable') {
+    super(message);
+    this.name = 'ModelScoringError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 type ScoringOutcome = {
   riskProbability: number;
   decision: Decision;
@@ -516,48 +536,10 @@ type ScoringOutcome = {
   source: string;
 };
 
-const scoreAssessment = async (
+const buildFallbackScoringOutcome = (
   c: Context<AppEnv>,
-  rawPayload: Record<string, unknown>
-): Promise<ScoringOutcome> => {
-  const normalizedPayload = normalizeRiskFeatures(rawPayload);
-  const endpoint = getModelScoringEndpoint(c.env);
-
-  if (endpoint) {
-    const url = endpoint.endsWith('/predict') ? endpoint : `${endpoint.replace(/\/$/, '')}/predict`;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-    const token = getModelScoringToken(c.env);
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(normalizedPayload)
-      });
-
-      if (response.ok) {
-        const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-        const riskProbability = clamp(readNumber(body, ['risk_probability'], 0.5));
-        const explicitDecision = normalizeDecision(body.decision);
-        const decision = explicitDecision ?? toDecision(riskProbability, getThreshold(c.env));
-        const modelVersion = asNonEmpty(body.model_version) ?? getModelVersion(c.env);
-        return {
-          riskProbability: Number(riskProbability.toFixed(6)),
-          decision,
-          modelVersion,
-          source: 'ml_service'
-        };
-      }
-    } catch {
-      // fall through to local fallback for reliability
-    }
-  }
-
+  normalizedPayload: Record<string, unknown>
+): ScoringOutcome => {
   const fallbackRisk = computeHeuristicRiskProbability(normalizedPayload);
   return {
     riskProbability: fallbackRisk,
@@ -565,6 +547,68 @@ const scoreAssessment = async (
     modelVersion: 'worker-heuristic-fallback-v2',
     source: 'worker_fallback'
   };
+};
+
+const scoreAssessment = async (
+  c: Context<AppEnv>,
+  rawPayload: Record<string, unknown>
+): Promise<ScoringOutcome> => {
+  const normalizedPayload = normalizeRiskFeatures(rawPayload);
+  const fallbackEnabled = isWorkerScoringFallbackEnabled(c.env);
+  const endpoint = getModelScoringEndpoint(c.env);
+
+  if (!endpoint) {
+    if (fallbackEnabled) {
+      return buildFallbackScoringOutcome(c, normalizedPayload);
+    }
+    throw new ModelScoringError(
+      'Model scoring endpoint is not configured. Set MODEL_SCORING_ENDPOINT or enable WORKER_SCORING_FALLBACK_ENABLED.'
+    );
+  }
+
+  const url = endpoint.endsWith('/predict') ? endpoint : `${endpoint.replace(/\/$/, '')}/predict`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  const token = getModelScoringToken(c.env);
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(normalizedPayload)
+    });
+
+    if (!response.ok) {
+      if (fallbackEnabled) {
+        return buildFallbackScoringOutcome(c, normalizedPayload);
+      }
+      throw new ModelScoringError(`Model scoring request failed with status ${response.status}`);
+    }
+
+    const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const riskProbability = clamp(readNumber(body, ['risk_probability'], 0.5));
+    const explicitDecision = normalizeDecision(body.decision);
+    const decision = explicitDecision ?? toDecision(riskProbability, getThreshold(c.env));
+    const modelVersion = asNonEmpty(body.model_version) ?? getModelVersion(c.env);
+    return {
+      riskProbability: Number(riskProbability.toFixed(6)),
+      decision,
+      modelVersion,
+      source: 'ml_service'
+    };
+  } catch (error) {
+    if (error instanceof ModelScoringError) {
+      throw error;
+    }
+    if (fallbackEnabled) {
+      return buildFallbackScoringOutcome(c, normalizedPayload);
+    }
+    throw new ModelScoringError('Model scoring service is unavailable');
+  }
 };
 
 type CreateApplicationInput = {
@@ -890,6 +934,22 @@ routes.post('/applications', requireUserAuth, async (c) => {
 
     return success(c, responseData, 201);
   } catch (error) {
+    if (error instanceof ModelScoringError) {
+      const responseError: ApiErrorPayload = { code: error.code, message: error.message };
+      if (idempotencyRecordId) {
+        const supabase = new SupabaseRestClient(c);
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status: error.status,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, error.status);
+    }
+
     if (error instanceof SupabaseError) {
       const status = toApiStatus(error.status);
       const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
@@ -1352,6 +1412,22 @@ routes.post('/documents', requireUserAuth, async (c) => {
       201
     );
   } catch (error) {
+    if (error instanceof ModelScoringError) {
+      const responseError: ApiErrorPayload = { code: error.code, message: error.message };
+      if (idempotencyRecordId) {
+        const supabase = new SupabaseRestClient(c);
+        await finalizeIdempotency({
+          supabase,
+          env: c.env,
+          recordId: idempotencyRecordId,
+          status: error.status,
+          data: null,
+          error: responseError
+        });
+      }
+      return failure(c, responseError, error.status);
+    }
+
     if (error instanceof SupabaseError) {
       const status = toApiStatus(error.status);
       const responseError: ApiErrorPayload = { code: 'supabase_error', message: error.message };
