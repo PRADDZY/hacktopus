@@ -53,11 +53,23 @@ Outputs:
 - promotion gate pass/fail summary
 - selected policy validity checks (guards against invalid/NaN/-sentinel promotions)
 
-## 4) Promote artifacts to inference service
+## 4) Freeze promotable release bundle
+
+```bash
+cd ml-service/training
+python freeze_release.py \
+  --artifacts-dir ../../local/models/risk_v2 \
+  --release-dir ../../local/models/risk_v2_release
+```
+
+This validates promotion gates from `training_manifest.json`, verifies required dual-target artifacts, and writes a `release_manifest.json` with checksums for reproducible deployment handoff.
+
+## 5) Promote artifacts to inference service
 
 Copy selected artifacts to `ml-service/` and set:
 
 - `MODEL_ARTIFACT_DIR`
 - `MODEL_METADATA_PATH`
+- `MODEL_RUNTIME_MODE=dual_target`
 
 Inference API contract remains `risk-v2.0.0` and returns the same response shape.

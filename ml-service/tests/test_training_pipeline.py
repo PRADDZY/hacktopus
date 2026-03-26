@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ if str(TRAINING_DIR) not in sys.path:
 
 import build_proxy_dataset as dataset_builder
 import feature_schema
+import freeze_release
 import train_ensemble
 
 
@@ -67,3 +69,92 @@ def test_evaluate_handles_single_class_without_nan():
     assert 0.0 <= metrics["roc_auc"] <= 1.0
     assert 0.0 <= metrics["pr_auc"] <= 1.0
     assert 0.0 <= metrics["brier"] <= 1.0
+
+
+def _write_release_artifacts(artifacts_dir: Path, promotion_pass: bool) -> None:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    required_files = [
+        "default_model.pkl",
+        "stress_model.pkl",
+        "default_calibrator.pkl",
+        "stress_calibrator.pkl",
+    ]
+    for name in required_files:
+        (artifacts_dir / name).write_bytes(b"test-artifact")
+
+    metadata = {
+        "threshold": 0.23,
+        "feature_columns": feature_schema.FEATURE_COLUMNS,
+        "required_features": feature_schema.FEATURE_COLUMNS,
+        "model_version": feature_schema.MODEL_VERSION,
+        "schema_version": feature_schema.RISK_SCHEMA_VERSION,
+        "reason_code_catalog": feature_schema.REASON_CODE_CATALOG,
+        "dual_target": {
+            "targets": {
+                "primary": feature_schema.PRIMARY_TARGET_COLUMN,
+                "secondary": feature_schema.SECONDARY_TARGET_COLUMN,
+            },
+            "blend_weights": {
+                feature_schema.PRIMARY_TARGET_COLUMN: 0.7,
+                feature_schema.SECONDARY_TARGET_COLUMN: 0.3,
+            },
+            "artifacts": {
+                "primary_model": "default_model.pkl",
+                "secondary_model": "stress_model.pkl",
+                "primary_calibrator": "default_calibrator.pkl",
+                "secondary_calibrator": "stress_calibrator.pkl",
+            },
+        },
+    }
+    (artifacts_dir / "model_metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    training_manifest = {
+        "gates": {
+            "promotion_pass": promotion_pass,
+            "policy_and_fairness_pass": promotion_pass,
+            "quality_non_regression_pass": promotion_pass,
+            "selected_policy_valid": promotion_pass,
+        }
+    }
+    (artifacts_dir / "training_manifest.json").write_text(json.dumps(training_manifest), encoding="utf-8")
+
+
+def test_freeze_release_generates_manifest(tmp_path):
+    artifacts_dir = tmp_path / "artifacts"
+    _write_release_artifacts(artifacts_dir, promotion_pass=True)
+
+    output_path = tmp_path / "release_manifest.json"
+    written = freeze_release.freeze_release(
+        artifacts_dir=artifacts_dir,
+        output_path=output_path,
+        release_dir=None,
+        allow_gate_fail=False,
+        notes="demo release",
+    )
+
+    assert written == output_path
+    manifest = json.loads(output_path.read_text(encoding="utf-8"))
+    assert manifest["release_type"] == "ml-dual-target"
+    assert manifest["runtime"]["recommended_model_runtime_mode"] == "dual_target"
+    assert manifest["gate_validation"]["passed"] is True
+    assert len(manifest["files"]) == 6
+
+
+def test_freeze_release_blocks_when_gates_fail(tmp_path):
+    artifacts_dir = tmp_path / "artifacts"
+    _write_release_artifacts(artifacts_dir, promotion_pass=False)
+
+    output_path = tmp_path / "release_manifest.json"
+    try:
+        freeze_release.freeze_release(
+            artifacts_dir=artifacts_dir,
+            output_path=output_path,
+            release_dir=None,
+            allow_gate_fail=False,
+            notes=None,
+        )
+    except RuntimeError as exc:
+        assert "Release freeze blocked" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError when promotion gates fail")
