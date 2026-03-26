@@ -122,6 +122,7 @@ ML Service
 ## Demo Operations
 
 - Demo runbook: [docs/demo/demo-runbook.md](docs/demo/demo-runbook.md)
+- Cloudflare + Modal deploy runbook: [docs/deploy/cloudflare-modal-cli.md](docs/deploy/cloudflare-modal-cli.md)
 - Worker smoke check:
 
 ```bash
