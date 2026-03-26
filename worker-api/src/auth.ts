@@ -114,8 +114,22 @@ const normalizeRolesFromClaims = (payload: JWTPayload, roleClaim: string): strin
   const sources: unknown[] = [payload[roleClaim], payload.roles, payload.permissions];
   const appMetadata = payload.app_metadata;
   if (typeof appMetadata === 'object' && appMetadata !== null) {
-    const appRoles = (appMetadata as Record<string, unknown>).roles;
-    sources.push(appRoles);
+    const appMetadataRecord = appMetadata as Record<string, unknown>;
+    sources.push(
+      appMetadataRecord.roles,
+      appMetadataRecord.role,
+      appMetadataRecord.demo_role
+    );
+  }
+
+  const userMetadata = payload.user_metadata;
+  if (typeof userMetadata === 'object' && userMetadata !== null) {
+    const userMetadataRecord = userMetadata as Record<string, unknown>;
+    sources.push(
+      userMetadataRecord.roles,
+      userMetadataRecord.role,
+      userMetadataRecord.requested_role
+    );
   }
 
   const roles: string[] = [];

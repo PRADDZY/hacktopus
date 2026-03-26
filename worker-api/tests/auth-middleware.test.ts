@@ -36,13 +36,18 @@ const signToken = async (roles: string[] = []): Promise<string> => {
     .sign(new TextEncoder().encode(SHARED_SECRET));
 };
 
-const signSupabaseToken = async (
-  subject = '22ca95e5-24a6-4f34-a4f4-6df65d0867d6'
-): Promise<string> => {
+const signSupabaseToken = async ({
+  subject = '22ca95e5-24a6-4f34-a4f4-6df65d0867d6',
+  claims = {}
+}: {
+  subject?: string;
+  claims?: Record<string, unknown>;
+} = {}): Promise<string> => {
   const now = Math.floor(Date.now() / 1000);
   return await new SignJWT({
     email: 'supabase-user@example.com',
-    role: 'authenticated'
+    role: 'authenticated',
+    ...claims
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuer(SUPABASE_ISSUER)
@@ -193,6 +198,48 @@ describe('Cloudflare Worker auth middleware', () => {
         headers: { 'Content-Type': 'application/json' }
       });
     });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await app.request(
+      '/v1/protected/admin',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
+      createEnv({
+        AUTH_ISSUER_BASE_URL: undefined,
+        AUTH_AUDIENCE: undefined,
+        AUTH_SHARED_SECRET: undefined,
+        AUTH_JWKS_URL: undefined,
+        AUTH_JWT_ALGORITHMS: undefined,
+        SUPABASE_URL,
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        SUPABASE_JWT_SECRET
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const payload = (await res.json()) as ApiEnvelope<{ ok: boolean; role: string }>;
+    expect(payload.error).toBeNull();
+    expect(payload.data).toEqual({ ok: true, role: 'admin' });
+  });
+
+  it('allows supabase token when user_metadata requested_role is admin', async () => {
+    const token = await signSupabaseToken({
+      claims: {
+        user_metadata: {
+          requested_role: 'admin'
+        }
+      }
+    });
+
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const res = await app.request(
