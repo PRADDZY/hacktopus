@@ -287,4 +287,26 @@ describe('Cloudflare Worker auth middleware', () => {
     expect(payload.error).toBeNull();
     expect(payload.data).toEqual({ ok: true, role: 'admin' });
   });
+
+  it('handles CORS preflight for assessment route', async () => {
+    const origin = 'https://fairlens-frontend.dpratik3005.workers.dev';
+    const res = await app.request(
+      '/v1/assessments',
+      {
+        method: 'OPTIONS',
+        headers: {
+          Origin: origin,
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'authorization,content-type,idempotency-key'
+        }
+      },
+      createEnv({
+        CORS_ALLOWED_ORIGINS: origin
+      })
+    );
+
+    expect([200, 204]).toContain(res.status);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(origin);
+    expect(res.headers.get('Access-Control-Allow-Methods')).toContain('POST');
+  });
 });

@@ -14,6 +14,7 @@ export type AppBindings = {
   AUTH_ROLE_CLAIM?: string;
   AUTH_ADMIN_ROLES?: string;
   AUTH_JWT_ALGORITHMS?: string;
+  CORS_ALLOWED_ORIGINS?: string;
   AUTH_SHARED_SECRET?: string;
   SUPABASE_JWT_SECRET?: string;
   SUPABASE_AUTH_ISSUER?: string;

@@ -85,6 +85,7 @@ Auth0/JWKS mode remains available as fallback via:
 - `SUPABASE_JWT_SECRET` (optional; used for HS256 fallback if provided)
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_REST_SCHEMA` (default `public`)
+- `CORS_ALLOWED_ORIGINS` (optional comma-separated allowlist; default `*`)
 - `RISK_APPROVAL_THRESHOLD` (default `0.55`)
 - `MODEL_VERSION` (default `worker-baseline-v1`)
 - `WORKER_SCORING_FALLBACK_ENABLED` (default `false`; enable only for local/dev resiliency testing)
