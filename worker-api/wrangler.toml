@@ -2,6 +2,7 @@ name = "fairlens-api-worker"
 main = "src/index.ts"
 compatibility_date = "2026-03-24"
 workers_dev = true
+account_id = "0f29b8c67d98ac571ea8874d8b3c7345"
 
 [vars]
 AUTH_REQUIRED = "true"

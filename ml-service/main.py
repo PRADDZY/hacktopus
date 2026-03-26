@@ -1,9 +1,13 @@
 import json
 import os
+import threading
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import joblib
 import pandas as pd
@@ -156,6 +160,19 @@ class StatementFeatureizeResponse(BaseModel):
     schema_version: str
     feature_schema_version: str
     features: PredictRequest
+
+
+class ExtractionDispatchRequest(BaseModel):
+    extraction_job_id: str = Field(..., min_length=1, description="Worker extraction job identifier")
+    document_id: str = Field(..., min_length=1, description="Document identifier")
+    owner_sub: str = Field(..., min_length=1, description="Owner subject identifier")
+    storage_key: str = Field(..., min_length=1, description="Storage key for the source statement")
+    source: str | None = Field(default="upload", description="Document source label")
+
+
+class ExtractionDispatchResponse(BaseModel):
+    job_id: str
+    accepted: bool
 
 
 def _resolve_model_paths() -> tuple[Path, Path]:
@@ -599,6 +616,80 @@ def _extract_statement_features(payload: StatementFeatureizeRequest) -> dict[str
     }
 
 
+def _read_callback_base_url() -> str | None:
+    value = os.getenv("EXTRACTION_CALLBACK_BASE_URL")
+    if not value:
+        return None
+    normalized = value.strip()
+    return normalized.rstrip("/") if normalized else None
+
+
+def _read_callback_secret() -> str | None:
+    value = os.getenv("EXTRACTION_CALLBACK_SECRET")
+    if not value:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _post_extraction_callback(
+    *,
+    extraction_job_id: str,
+    external_job_id: str,
+    status: Literal["processing", "completed", "failed"],
+    error_message: str | None = None,
+    features: dict[str, Any] | None = None,
+) -> None:
+    callback_base_url = _read_callback_base_url()
+    callback_secret = _read_callback_secret()
+    if not callback_base_url or not callback_secret:
+        return
+
+    payload: dict[str, Any] = {
+        "status": status,
+        "external_job_id": external_job_id,
+    }
+    if error_message:
+        payload["error_message"] = error_message
+    if features is not None:
+        payload["features"] = features
+
+    callback_url = f"{callback_base_url}/v1/extraction-jobs/{extraction_job_id}/callback"
+    request = urllib_request.Request(
+        callback_url,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-Callback-Secret": callback_secret,
+        },
+    )
+    timeout = max(float(os.getenv("EXTRACTION_CALLBACK_TIMEOUT_SECONDS", "8")), 1.0)
+
+    try:
+        with urllib_request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            response.read()
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, ValueError):
+        return
+
+
+def _run_extraction_pipeline(payload: ExtractionDispatchRequest, *, external_job_id: str) -> None:
+    _post_extraction_callback(
+        extraction_job_id=payload.extraction_job_id,
+        external_job_id=external_job_id,
+        status="processing",
+    )
+    _post_extraction_callback(
+        extraction_job_id=payload.extraction_job_id,
+        external_job_id=external_job_id,
+        status="failed",
+        error_message=(
+            "Extraction backend acknowledged the job but no OCR parser is configured in this deployment. "
+            "Upload CSV statements for direct scoring."
+        ),
+    )
+
+
 def _clamp(value: float, min_value: float = 0.0, max_value: float = 1.0) -> float:
     return max(min_value, min(max_value, value))
 
@@ -803,6 +894,24 @@ def featureize_statement(payload: StatementFeatureizeRequest) -> StatementFeatur
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Statement feature extraction failed: {exc}") from exc
+
+
+@app.post("/extract", response_model=ExtractionDispatchResponse)
+def extract(payload: ExtractionDispatchRequest) -> ExtractionDispatchResponse:
+    extraction_job_id = payload.extraction_job_id.strip()
+    if not extraction_job_id:
+        raise HTTPException(status_code=422, detail="extraction_job_id is required")
+
+    external_job_id = f"modal-{uuid.uuid4().hex[:12]}"
+    worker = threading.Thread(
+        target=_run_extraction_pipeline,
+        args=(payload,),
+        kwargs={"external_job_id": external_job_id},
+        daemon=True,
+    )
+    worker.start()
+
+    return ExtractionDispatchResponse(job_id=external_job_id, accepted=True)
 
 
 @app.post("/predict", response_model=PredictResponse)
