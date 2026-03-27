@@ -30,7 +30,7 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-This applies migrations from `backend/supabase/migrations`.
+This applies migrations from `supabase/migrations`.
 
 ## 3) Deploy ML service to Modal
 

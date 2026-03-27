@@ -7,9 +7,6 @@ Inclusive and explainable BNPL eligibility engine powered by cash-flow intellige
 Frontend (Next.js)
 - Unified app with shop and risk dashboard routes.
 
-Backend (FastAPI)
-- Legacy compatibility service retained for fallback/testing.
-
 Worker API (Cloudflare, Wave 1 foundation)
 - Primary runtime API for checkout/admin domain, auth guardrails, and assistant endpoint.
 - Strict scoring mode is default; heuristic fallback is opt-in via `WORKER_SCORING_FALLBACK_ENABLED=true`.
@@ -21,6 +18,7 @@ ML Service (FastAPI)
 
 Database
 - Supabase Postgres for application, extraction, and audit domain data.
+- Migrations are kept in `supabase/migrations`.
 
 Flow
 
@@ -48,26 +46,7 @@ MODEL_ARTIFACT_DIR=<optional-artifacts-dir>
 ML_LEGACY_JSON_FALLBACK_ENABLED=false
 ```
 
-### 2) Backend (optional legacy mode)
-
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 10000 --reload
-```
-
-Environment variables (backend/.env.example):
-
-```
-DATABASE_URL=postgresql://user:password@host:5432/dbname
-CORS_ORIGINS=http://localhost:3000
-ML_SERVICE_URL=http://localhost:9000
-ML_SERVICE_TIMEOUT=3.5
-```
-
-If the ML service is unavailable, the backend falls back to the local model files in `backend/model`.
-
-### 3) Frontend
+### 2) Frontend
 
 ```bash
 cd frontend
@@ -86,13 +65,22 @@ NEXT_PUBLIC_APP_BASE_URL=http://localhost:3000
 
 Supabase auth is required for login/signup/admin route access.
 
-### 4) Worker API (primary runtime)
+### 3) Worker API (primary runtime)
 
 ```bash
 cd worker-api
 npm install
 npm run dev
 ```
+
+### 4) Supabase schema
+
+```bash
+supabase link --project-ref <project-ref>
+supabase db push
+```
+
+This applies migrations from `supabase/migrations`.
 
 ## Key Endpoints
 
@@ -108,10 +96,6 @@ Worker API (primary app domain)
 - `GET /v1/audit-logs`
 - `POST /v1/documents`
 - `POST /v1/assessments`
-- `GET /health`
-
-Backend (legacy / compatibility)
-- `POST /predict`
 - `GET /health`
 
 ML Service
@@ -140,30 +124,13 @@ SUPABASE_URL=https://<project-ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<servic
 ## Project Structure
 
 ```
-backend/        FastAPI API + DB logging
 worker-api/     Cloudflare Worker API scaffold + auth middleware
 ml-service/     ML inference service (model artifacts + API)
 frontend/       Unified Next.js app (shop + dashboard)
-legacy/         Previous iterations kept for reference
-shared/         OpenAPI schema for shared contracts
-```
-
-## Shared Types
-
-Export OpenAPI and generate frontend types:
-
-```bash
-python backend/scripts/export_openapi.py
-cd frontend
-npm run types:generate
+supabase/       SQL migrations for schema + domain tables
 ```
 
 ## Tests
-
-Backend
-- `cd backend`
-- `python -m pytest`
-- `python -m pytest tests/integration`
 
 ML Service
 - `cd ml-service`

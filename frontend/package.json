@@ -15,8 +15,7 @@
     "lint": "next lint",
     "test": "node scripts/run-unit-tests.mjs",
     "test:watch": "node scripts/run-unit-tests.mjs",
-    "test:e2e": "playwright test",
-    "types:generate": "node scripts/generate-api-types.mjs"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "1.8.3",
